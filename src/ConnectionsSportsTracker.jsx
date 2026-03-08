@@ -401,6 +401,58 @@ function ThemePicker({ value, onChange, T }) {
   );
 }
 
+// ── Share helper ───────────────────────────────────────────────────────────
+function shareTodayResults(games, players, dateStr, setCopied) {
+  const puzzleNum = getTodaysPuzzleNum(games, dateStr);
+  const dayGames = puzzleNum
+    ? games.filter(g => g.puzzleNum && parseInt(g.puzzleNum) === puzzleNum)
+    : games.filter(g => g.date === dateStr);
+
+  if (dayGames.length === 0) {
+    alert("No results logged today yet!");
+    return;
+  }
+
+  // Collect and sort entries lowest time first, DNFs last
+  const entries = [];
+  for (const game of dayGames) {
+    for (const entry of game.players) {
+      entries.push(entry);
+    }
+  }
+  entries.sort((a,b) => {
+    if (a.dnf && b.dnf) return (a.submittedAt||0)-(b.submittedAt||0);
+    if (a.dnf) return 1;
+    if (b.dnf) return -1;
+    return (a.finalSeconds||0)-(b.finalSeconds||0);
+  });
+
+  const header = puzzleNum ? `MBA Friends Connections — Puzzle #${puzzleNum}` : `MBA Friends Connections — ${dateStr}`;
+  const medals = ["🥇","🥈","🥉"];
+
+  const lines = entries.map((e, i) => {
+    const medal = medals[i] || `${i+1}.`;
+    const time = e.dnf ? "DNF" : e.finalTime;
+    const grid = e.gridRows ? e.gridRows.map(row => row.map(c => {
+      const emojis = { yellow:"🟡", blue:"🔵", green:"🟢", purple:"🟣" };
+      return emojis[c] || "⬜";
+    }).join("")).join(" ") : "";
+    return `${medal} ${e.name}  ${time}
+${grid}`;
+  });
+
+  const text = `${header}
+
+${lines.join("
+
+")}`;
+
+  navigator.clipboard.writeText(text).then(() => {
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  }).catch(() => alert("Could not copy — try again"));
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 export default function App() {
   const [data, setData]             = useState(null);
@@ -417,6 +469,7 @@ export default function App() {
   const [newTheme, setNewTheme]     = useState("default_dark");
   const [lbTab, setLbTab]           = useState("daily");
   const [editThemePlayer, setEditThemePlayer] = useState(null);
+  const [copied, setCopied] = useState(false);
   // The player currently "checked in" on this device
   const [activePlayer, setActivePlayer] = useState(getSavedActivePlayer);
 
@@ -778,6 +831,7 @@ export default function App() {
           <Btn T={T} onClick={() => { setLogPlayer(activePlayer); setLogStep("paste"); setScreen("log"); }} style={{ gridColumn:"1/-1", padding:16, fontSize:16 }}>📋 Log a Result</Btn>
           <Btn T={T} variant="ghost" onClick={() => { setLbTab("daily"); setScreen("leaderboard"); }} style={{ padding:14 }}>🏆 Leaderboard</Btn>
           <Btn T={T} variant="ghost" onClick={() => setScreen("history")} style={{ padding:14 }}>📅 History</Btn>
+          <Btn T={T} variant="ghost" onClick={() => shareTodayResults(data.games, names, todayStr(), setCopied)} style={{ gridColumn:"1/-1", padding:14 }}>{copied ? "✓ Copied!" : "📤 Share Today's Results"}</Btn>
         </div>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, padding:"10px 14px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:10 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8 }}>
