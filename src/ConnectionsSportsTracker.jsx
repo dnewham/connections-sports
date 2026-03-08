@@ -30,6 +30,12 @@ function getSavedTheme(name) {
 function saveThemeLocally(name, themeId) {
   try { localStorage.setItem(`theme_${name}`, themeId); } catch {}
 }
+function getSavedActivePlayer() {
+  try { return localStorage.getItem("activePlayer") || null; } catch { return null; }
+}
+function saveActivePlayer(name) {
+  try { localStorage.setItem("activePlayer", name); } catch {}
+}
 
 // ── Share-text parser ──────────────────────────────────────────────────────
 function parseShareText(text) {
@@ -394,17 +400,20 @@ export default function App() {
   const [newName, setNewName]       = useState("");
   const [newTheme, setNewTheme]     = useState("default_dark");
   const [lbTab, setLbTab]           = useState("daily");
-  const [activeThemeId, setActiveThemeId] = useState(DEFAULT_THEME);
   const [editThemePlayer, setEditThemePlayer] = useState(null);
+  // The player currently "checked in" on this device
+  const [activePlayer, setActivePlayer] = useState(getSavedActivePlayer);
 
   useEffect(() => { loadData().then(setData); }, []);
 
-  // When a player is selected for logging, load their theme
-  useEffect(() => {
-    if (logPlayer) setActiveThemeId(getSavedTheme(logPlayer));
-  }, [logPlayer]);
-
+  // Active theme = checked-in player's theme (falls back to default)
+  const activeThemeId = activePlayer ? getSavedTheme(activePlayer) : DEFAULT_THEME;
   const T = THEMES[activeThemeId] || THEMES[DEFAULT_THEME];
+
+  const switchPlayer = (name) => {
+    setActivePlayer(name);
+    saveActivePlayer(name);
+  };
 
   const persist = useCallback(async next => { setSaving(true); setData(next); await saveData(next); setSaving(false); }, []);
 
@@ -451,7 +460,6 @@ export default function App() {
     }
     await persist({ ...data, games });
     setLogStep("pick"); setLogPlayer(null); setPasteText(""); setParsed(null); setScore(null);
-    setActiveThemeId(DEFAULT_THEME);
     setScreen("home");
   };
 
@@ -459,24 +467,40 @@ export default function App() {
 
   const names = playerNames(data.players);
 
-  // ── LOG: pick player ────────────────────────────────────────────────────
-  if (screen==="log" && logStep==="pick") return (
-    <Screen title="Log a Result" onBack={() => setScreen("home")} T={T}>
-      <div style={{ marginTop:20 }}>
-        <div style={{ fontSize:12, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginBottom:12 }}>Who's logging?</div>
-        {names.length===0 && <div style={{ color:T.muted, fontSize:13, textAlign:"center", padding:30 }}>No players yet — add some from the home screen.</div>}
-        {names.map(name => (
-          <Card key={name} T={T} onClick={() => { setLogPlayer(name); setActiveThemeId(getSavedTheme(name)); setLogStep("paste"); }} style={{ marginBottom:10, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-              <span style={{ width:12, height:12, borderRadius:"50%", background:THEMES[getSavedTheme(name)].accent, display:"inline-block", flexShrink:0 }} />
-              <span style={{ fontWeight:700, fontSize:15 }}>{name}</span>
-            </div>
-            <span style={{ color:T.muted, fontSize:18 }}>→</span>
-          </Card>
-        ))}
+  // ── WHO ARE YOU? ────────────────────────────────────────────────────────
+  if (!activePlayer || !names.includes(activePlayer)) {
+    const DT = THEMES[DEFAULT_THEME];
+    return (
+      <div style={{ minHeight:"100vh", background:DT.bg, color:T.text, fontFamily:mono, display:"flex", alignItems:"center", justifyContent:"center" }}>
+        <div style={{ maxWidth:360, width:"100%", padding:"0 24px" }}>
+          <div style={{ textAlign:"center", marginBottom:32 }}>
+            <div style={{ fontSize:36, marginBottom:12 }}>🏆</div>
+            <h1 style={{ margin:0, fontFamily:display, fontSize:18, fontWeight:800, letterSpacing:"0.06em", textTransform:"uppercase" }}>MBA Friends Connections</h1>
+            <div style={{ fontSize:13, color:T.muted, marginTop:8 }}>Who's playing on this device?</div>
+          </div>
+          {names.length === 0 && (
+            <div style={{ textAlign:"center", color:T.muted, fontSize:13 }}>No players added yet. Ask your group admin to add players first.</div>
+          )}
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            {names.map(name => {
+              const th = THEMES[getSavedTheme(name)];
+              return (
+                <button key={name} onClick={() => switchPlayer(name)} style={{
+                  display:"flex", alignItems:"center", gap:12, padding:"14px 16px",
+                  background:DT.surface, border:`1px solid ${DT.border}`, borderRadius:12,
+                  cursor:"pointer", fontFamily:mono, color:T.text, textAlign:"left",
+                }}>
+                  <span style={{ width:14, height:14, borderRadius:"50%", background:th.accent, display:"inline-block", flexShrink:0 }} />
+                  <span style={{ fontWeight:700, fontSize:16, flex:1 }}>{name}</span>
+                  <span style={{ fontSize:12, color:T.muted }}>{th.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
-    </Screen>
-  );
+    );
+  }
 
   // ── LOG: paste share text ───────────────────────────────────────────────
   if (screen==="log" && logStep==="paste") return (
@@ -516,21 +540,19 @@ export default function App() {
     const dailyRanked  = getDailyLeaderboard(data.games, names, today);
     const weeklyRanked = getWeeklyLeaderboard(data.games, names, thisWeek);
     const allTimeLb    = getLeaderboard(data.games, names);
-    const LT = THEMES[DEFAULT_THEME]; // leaderboard always uses default theme
-
     return (
-      <Screen title="Leaderboard" onBack={() => setScreen("home")} T={LT}>
+      <Screen title="Leaderboard" onBack={() => setScreen("home")} T={T}>
         <div style={{ marginTop:16 }}>
-          <Tabs T={LT}
+          <Tabs T={T}
             tabs={[{ id:"daily", label:"Today" }, { id:"weekly", label:"This Week" }, { id:"alltime", label:"All Time" }]}
             active={lbTab} onChange={setLbTab}
           />
           {lbTab==="daily" && (
             <div>
-              <div style={{ fontSize:11, color:LT.muted, textAlign:"center", marginBottom:14 }}>{today} · lowest adjusted time wins</div>
-              {dailyRanked.length===0 && <div style={{ color:LT.muted, textAlign:"center", padding:40, fontSize:13 }}>No results logged today yet.</div>}
+              <div style={{ fontSize:11, color:T.muted, textAlign:"center", marginBottom:14 }}>{today} · lowest adjusted time wins</div>
+              {dailyRanked.length===0 && <div style={{ color:T.muted, textAlign:"center", padding:40, fontSize:13 }}>No results logged today yet.</div>}
               {dailyRanked.map((p,idx) => (
-                <Card key={p.name} T={LT} style={{ marginBottom:10, borderColor:idx===0?`${LT.accent}40`:LT.border }}>
+                <Card key={p.name} T={T} style={{ marginBottom:10, borderColor:idx===0?`${T.accent}40`:T.border }}>
                   <div style={{ display:"flex", alignItems:"center", gap:12 }}>
                     <div style={{ fontSize:20, minWidth:28 }}>{["🥇","🥈","🥉"][idx]||`${idx+1}.`}</div>
                     <div style={{ flex:1 }}>
@@ -540,21 +562,21 @@ export default function App() {
                       </div>
                     </div>
                     <div style={{ textAlign:"right" }}>
-                      <div style={{ fontFamily:display, fontWeight:800, fontSize:20, color:p.dnf?"#e07070":LT.accent }}>{p.finalTime}</div>
-                      <div style={{ fontSize:10, color:LT.muted, letterSpacing:"0.06em", textTransform:"uppercase" }}>{p.dnf?"DNF":"Final Time"}</div>
+                      <div style={{ fontFamily:display, fontWeight:800, fontSize:20, color:p.dnf?"#e07070":T.accent }}>{p.finalTime}</div>
+                      <div style={{ fontSize:10, color:T.muted, letterSpacing:"0.06em", textTransform:"uppercase" }}>{p.dnf?"DNF":"Final Time"}</div>
                     </div>
                   </div>
                 </Card>
               ))}
-              {dailyRanked.length>0 && <div style={{ fontSize:11, color:LT.muted, textAlign:"center", marginTop:8 }}>Tiebreak: first to submit</div>}
+              {dailyRanked.length>0 && <div style={{ fontSize:11, color:T.muted, textAlign:"center", marginTop:8 }}>Tiebreak: first to submit</div>}
             </div>
           )}
           {lbTab==="weekly" && (
             <div>
-              <div style={{ fontSize:11, color:LT.muted, textAlign:"center", marginBottom:14 }}>Week of {thisWeek} · Mon–Sun</div>
-              {weeklyRanked.every(p=>p.played===0) && <div style={{ color:LT.muted, textAlign:"center", padding:40, fontSize:13 }}>No results logged this week yet.</div>}
+              <div style={{ fontSize:11, color:T.muted, textAlign:"center", marginBottom:14 }}>Week of {thisWeek} · Mon–Sun</div>
+              {weeklyRanked.every(p=>p.played===0) && <div style={{ color:T.muted, textAlign:"center", padding:40, fontSize:13 }}>No results logged this week yet.</div>}
               {weeklyRanked.filter(p=>p.played>0).map((p,idx) => (
-                <Card key={p.name} T={LT} style={{ marginBottom:10, borderColor:idx===0?`${LT.accent}40`:LT.border }}>
+                <Card key={p.name} T={T} style={{ marginBottom:10, borderColor:idx===0?`${T.accent}40`:T.border }}>
                   <div style={{ display:"flex", alignItems:"center", gap:12 }}>
                     <div style={{ fontSize:20, minWidth:28 }}>{["🥇","🥈","🥉"][idx]||`${idx+1}.`}</div>
                     <div style={{ flex:1 }}>
@@ -562,24 +584,24 @@ export default function App() {
                         <span style={{ width:10, height:10, borderRadius:"50%", background:THEMES[getSavedTheme(p.name)].accent, display:"inline-block", flexShrink:0 }} />
                         <span style={{ fontWeight:700, fontSize:15 }}>{p.name}</span>
                       </div>
-                      <div style={{ fontSize:11, color:LT.muted, marginTop:3 }}>{p.played} day{p.played!==1?"s":""} played · {fmt(p.cumSeconds)} cumulative</div>
+                      <div style={{ fontSize:11, color:T.muted, marginTop:3 }}>{p.played} day{p.played!==1?"s":""} played · {fmt(p.cumSeconds)} cumulative</div>
                     </div>
                     <div style={{ textAlign:"right" }}>
-                      <div style={{ fontFamily:display, fontWeight:800, fontSize:24, color:LT.accent }}>{p.wins}</div>
-                      <div style={{ fontSize:10, color:LT.muted, letterSpacing:"0.06em", textTransform:"uppercase" }}>Daily Wins</div>
+                      <div style={{ fontFamily:display, fontWeight:800, fontSize:24, color:T.accent }}>{p.wins}</div>
+                      <div style={{ fontSize:10, color:T.muted, letterSpacing:"0.06em", textTransform:"uppercase" }}>Daily Wins</div>
                     </div>
                   </div>
                 </Card>
               ))}
-              {weeklyRanked.some(p=>p.played>0) && <div style={{ fontSize:11, color:LT.muted, textAlign:"center", marginTop:8 }}>Tiebreaks: fewest DNFs → lowest cumulative time</div>}
+              {weeklyRanked.some(p=>p.played>0) && <div style={{ fontSize:11, color:T.muted, textAlign:"center", marginTop:8 }}>Tiebreaks: fewest DNFs → lowest cumulative time</div>}
             </div>
           )}
           {lbTab==="alltime" && (
             <div>
               <div style={{ marginBottom:20 }}>
-                <div style={{ fontSize:11, color:LT.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginBottom:10 }}>Best Time</div>
+                <div style={{ fontSize:11, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginBottom:10 }}>Best Time</div>
                 {allTimeLb.map((p,idx) => (
-                  <Card key={p.name} T={LT} onClick={() => { setDetail(p.name); setScreen("playerDetail"); }} style={{ marginBottom:8, borderColor:idx===0?`${LT.accent}40`:LT.border }}>
+                  <Card key={p.name} T={T} onClick={() => { setDetail(p.name); setScreen("playerDetail"); }} style={{ marginBottom:8, borderColor:idx===0?`${T.accent}40`:T.border }}>
                     <div style={{ display:"flex", alignItems:"center", gap:12 }}>
                       <div style={{ fontSize:18, minWidth:28 }}>{["🥇","🥈","🥉"][idx]||`${idx+1}.`}</div>
                       <div style={{ flex:1 }}>
@@ -587,22 +609,22 @@ export default function App() {
                           <span style={{ width:10, height:10, borderRadius:"50%", background:THEMES[getSavedTheme(p.name)].accent, display:"inline-block", flexShrink:0 }} />
                           <span style={{ fontWeight:700, fontSize:14 }}>{p.name}</span>
                         </div>
-                        <div style={{ fontSize:11, color:LT.muted, marginTop:2 }}>{p.played} game{p.played!==1?"s":""} · avg {p.fmtAvg}</div>
+                        <div style={{ fontSize:11, color:T.muted, marginTop:2 }}>{p.played} game{p.played!==1?"s":""} · avg {p.fmtAvg}</div>
                       </div>
                       <div style={{ textAlign:"right" }}>
-                        <div style={{ fontFamily:display, fontWeight:800, fontSize:18, color:LT.accent }}>{p.fmtBest}</div>
-                        <div style={{ fontSize:10, color:LT.muted, letterSpacing:"0.06em", textTransform:"uppercase" }}>Best</div>
+                        <div style={{ fontFamily:display, fontWeight:800, fontSize:18, color:T.accent }}>{p.fmtBest}</div>
+                        <div style={{ fontSize:10, color:T.muted, letterSpacing:"0.06em", textTransform:"uppercase" }}>Best</div>
                       </div>
                     </div>
                   </Card>
                 ))}
-                {allTimeLb.length>0 && <div style={{ fontSize:11, color:LT.muted, textAlign:"center", marginTop:4 }}>Tap for player details</div>}
+                {allTimeLb.length>0 && <div style={{ fontSize:11, color:T.muted, textAlign:"center", marginTop:4 }}>Tap for player details</div>}
               </div>
-              <Card T={LT} style={{ marginBottom:12 }}>
-                <WinsBarChart data={getAllTimeDailyWins(data.games, names)} label="All-Time Daily Wins" T={LT} />
+              <Card T={T} style={{ marginBottom:12 }}>
+                <WinsBarChart data={getAllTimeDailyWins(data.games, names)} label="All-Time Daily Wins" T={T} />
               </Card>
-              <Card T={LT}>
-                <WinsBarChart data={getAllTimeWeeklyWins(data.games, names)} label="All-Time Weekly Wins" T={LT} />
+              <Card T={T}>
+                <WinsBarChart data={getAllTimeWeeklyWins(data.games, names)} label="All-Time Weekly Wins" T={T} />
               </Card>
             </div>
           )}
@@ -617,28 +639,27 @@ export default function App() {
     const playerGames = data.games.filter(g => g.players.some(p => p.name===detail));
     const dailyWins = getAllTimeDailyWins(data.games, names).find(p=>p.name===detail)?.wins || 0;
     const weeklyWins = getAllTimeWeeklyWins(data.games, names).find(p=>p.name===detail)?.wins || 0;
-    const DT = THEMES[DEFAULT_THEME];
     return (
-      <Screen title={detail} onBack={() => setScreen("leaderboard")} T={DT}>
+      <Screen title={detail} onBack={() => setScreen("leaderboard")} T={T}>
         <div style={{ marginTop:16 }}>
-          <Card T={DT} style={{ marginBottom:12 }}>
+          <Card T={T} style={{ marginBottom:12 }}>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, textAlign:"center" }}>
               {[["Games",stats.played],["Best",stats.fmtBest],["Daily W",dailyWins],["Weekly W",weeklyWins]].map(([l,v])=>(
                 <div key={l}>
-                  <div style={{ fontFamily:display, fontWeight:800, fontSize:18, color:DT.accent }}>{v}</div>
-                  <div style={{ fontSize:9, color:DT.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginTop:3 }}>{l}</div>
+                  <div style={{ fontFamily:display, fontWeight:800, fontSize:18, color:T.accent }}>{v}</div>
+                  <div style={{ fontSize:9, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginTop:3 }}>{l}</div>
                 </div>
               ))}
             </div>
           </Card>
-          <div style={{ fontSize:11, color:DT.muted, letterSpacing:"0.07em", textTransform:"uppercase", margin:"16px 0 8px" }}>Game History</div>
+          <div style={{ fontSize:11, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", margin:"16px 0 8px" }}>Game History</div>
           {playerGames.map(game => {
             const entry = game.players.find(p => p.name===detail);
             return (
-              <Card key={game.id} T={DT} style={{ marginBottom:8 }}>
+              <Card key={game.id} T={T} style={{ marginBottom:8 }}>
                 <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                   <div>
-                    <div style={{ fontSize:12, color:DT.muted }}>{game.puzzleNum?`Puzzle #${game.puzzleNum}`:game.date}{game.difficulty&&` · ${game.difficulty}`}</div>
+                    <div style={{ fontSize:12, color:T.muted }}>{game.puzzleNum?`Puzzle #${game.puzzleNum}`:game.date}{game.difficulty&&` · ${game.difficulty}`}</div>
                     <div style={{ display:"flex", gap:3, marginTop:6 }}>
                       {entry.gridRows?.map((row,i)=>(
                         <div key={i} style={{ display:"flex", gap:2 }}>{row.map((c,j)=><ColorDot key={j} color={c} size={10}/>)}</div>
@@ -653,8 +674,8 @@ export default function App() {
                     )}
                   </div>
                   <div style={{ textAlign:"right", marginLeft:12 }}>
-                    <div style={{ fontFamily:display, fontWeight:800, fontSize:18, color:entry.dnf?"#e07070":DT.accent }}>{entry.finalTime}</div>
-                    <div style={{ fontSize:10, color:DT.muted, marginTop:2 }}>{entry.dnf?"Did Not Finish":`raw ${entry.rawTime}`}</div>
+                    <div style={{ fontFamily:display, fontWeight:800, fontSize:18, color:entry.dnf?"#e07070":T.accent }}>{entry.finalTime}</div>
+                    <div style={{ fontSize:10, color:T.muted, marginTop:2 }}>{entry.dnf?"Did Not Finish":`raw ${entry.rawTime}`}</div>
                   </div>
                 </div>
               </Card>
@@ -667,19 +688,18 @@ export default function App() {
 
   // ── HISTORY ─────────────────────────────────────────────────────────────
   if (screen==="history") {
-    const HT = THEMES[DEFAULT_THEME];
     return (
-      <Screen title="Game History" onBack={() => setScreen("home")} T={HT}>
+      <Screen title="Game History" onBack={() => setScreen("home")} T={T}>
         <div style={{ marginTop:16 }}>
-          {data.games.length===0 && <div style={{ color:HT.muted, textAlign:"center", padding:40, fontSize:13 }}>No games logged yet.</div>}
+          {data.games.length===0 && <div style={{ color:T.muted, textAlign:"center", padding:40, fontSize:13 }}>No games logged yet.</div>}
           {data.games.map(game=>(
-            <Card key={game.id} T={HT} style={{ marginBottom:12 }}>
-              <div style={{ fontSize:12, color:HT.muted, marginBottom:10, display:"flex", justifyContent:"space-between" }}>
+            <Card key={game.id} T={T} style={{ marginBottom:12 }}>
+              <div style={{ fontSize:12, color:T.muted, marginBottom:10, display:"flex", justifyContent:"space-between" }}>
                 <span>{game.puzzleNum?`Puzzle #${game.puzzleNum}`:game.date}</span>
                 {game.difficulty&&<span style={{ textTransform:"capitalize" }}>{game.difficulty}</span>}
               </div>
               {game.players.map(entry=>(
-                <div key={entry.name} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"8px 0", borderTop:`1px solid ${HT.border}` }}>
+                <div key={entry.name} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"8px 0", borderTop:`1px solid ${T.border}` }}>
                   <div>
                     <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                       <span style={{ width:10, height:10, borderRadius:"50%", background:THEMES[getSavedTheme(entry.name)].accent, display:"inline-block", flexShrink:0 }} />
@@ -692,8 +712,8 @@ export default function App() {
                     </div>
                   </div>
                   <div style={{ textAlign:"right" }}>
-                    <div style={{ fontFamily:display, fontWeight:800, fontSize:16, color:entry.dnf?"#e07070":HT.accent }}>{entry.finalTime}</div>
-                    <div style={{ fontSize:10, color:HT.muted }}>{entry.dnf?"Did Not Finish":`raw ${entry.rawTime}`}</div>
+                    <div style={{ fontFamily:display, fontWeight:800, fontSize:16, color:entry.dnf?"#e07070":T.accent }}>{entry.finalTime}</div>
+                    <div style={{ fontSize:10, color:T.muted }}>{entry.dnf?"Did Not Finish":`raw ${entry.rawTime}`}</div>
                   </div>
                 </div>
               ))}
@@ -705,59 +725,65 @@ export default function App() {
   }
 
   // ── HOME ─────────────────────────────────────────────────────────────────
-  const HT = THEMES[DEFAULT_THEME];
   const lb = getLeaderboard(data.games, names);
   const todayWinner = getDailyLeaderboard(data.games, names, todayStr())[0];
   const weekWinner  = getWeeklyLeaderboard(data.games, names, thisWeekStr()).find(p=>p.wins>0);
   return (
-    <Screen title="🏆 MBA Friends Connections" T={HT}>
+    <Screen title="🏆 MBA Friends Connections" T={T}>
       <div style={{ marginTop:20 }}>
         {data.games.length>0 && (
-          <Card T={HT} style={{ marginBottom:20 }}>
+          <Card T={T} style={{ marginBottom:20 }}>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, textAlign:"center" }}>
               <div>
-                <div style={{ fontFamily:display, fontWeight:800, fontSize:26, color:HT.accent }}>{data.games.length}</div>
-                <div style={{ fontSize:10, color:HT.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginTop:3 }}>Games</div>
+                <div style={{ fontFamily:display, fontWeight:800, fontSize:26, color:T.accent }}>{data.games.length}</div>
+                <div style={{ fontSize:10, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginTop:3 }}>Games</div>
               </div>
               <div>
-                <div style={{ fontFamily:display, fontWeight:800, fontSize:14, color:HT.accent, lineHeight:1.2, marginTop:4 }}>{todayWinner?.name?.split(" ")[0]||"—"}</div>
-                <div style={{ fontSize:10, color:HT.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginTop:5 }}>Today</div>
+                <div style={{ fontFamily:display, fontWeight:800, fontSize:14, color:T.accent, lineHeight:1.2, marginTop:4 }}>{todayWinner?.name?.split(" ")[0]||"—"}</div>
+                <div style={{ fontSize:10, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginTop:5 }}>Today</div>
               </div>
               <div>
-                <div style={{ fontFamily:display, fontWeight:800, fontSize:14, color:HT.accent, lineHeight:1.2, marginTop:4 }}>{weekWinner?.name?.split(" ")[0]||"—"}</div>
-                <div style={{ fontSize:10, color:HT.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginTop:5 }}>This Week</div>
+                <div style={{ fontFamily:display, fontWeight:800, fontSize:14, color:T.accent, lineHeight:1.2, marginTop:4 }}>{weekWinner?.name?.split(" ")[0]||"—"}</div>
+                <div style={{ fontSize:10, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginTop:5 }}>This Week</div>
               </div>
             </div>
           </Card>
         )}
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:20 }}>
-          <Btn T={HT} onClick={() => { setLogStep("pick"); setScreen("log"); }} disabled={names.length===0} style={{ gridColumn:"1/-1", padding:16, fontSize:16 }}>📋 Log a Result</Btn>
-          <Btn T={HT} variant="ghost" onClick={() => { setLbTab("daily"); setScreen("leaderboard"); }} style={{ padding:14 }}>🏆 Leaderboard</Btn>
-          <Btn T={HT} variant="ghost" onClick={() => setScreen("history")} style={{ padding:14 }}>📅 History</Btn>
+          <Btn T={T} onClick={() => { setLogPlayer(activePlayer); setLogStep("paste"); setScreen("log"); }} style={{ gridColumn:"1/-1", padding:16, fontSize:16 }}>📋 Log a Result</Btn>
+          <Btn T={T} variant="ghost" onClick={() => { setLbTab("daily"); setScreen("leaderboard"); }} style={{ padding:14 }}>🏆 Leaderboard</Btn>
+          <Btn T={T} variant="ghost" onClick={() => setScreen("history")} style={{ padding:14 }}>📅 History</Btn>
         </div>
-        {names.length===0 && <div style={{ textAlign:"center", color:HT.muted, fontSize:13, marginBottom:20 }}>Add your players below to get started.</div>}
-        <div style={{ fontSize:11, color:HT.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginBottom:10 }}>Players</div>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, padding:"10px 14px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:10 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <span style={{ width:10, height:10, borderRadius:"50%", background:T.accent, display:"inline-block" }} />
+            <span style={{ fontSize:13, fontWeight:700 }}>Playing as {activePlayer}</span>
+          </div>
+          <button onClick={() => { setActivePlayer(null); saveActivePlayer(""); }} style={{ background:"none", border:"none", color:T.muted, fontSize:12, cursor:"pointer", fontFamily:mono, fontWeight:700, letterSpacing:"0.04em", textTransform:"uppercase" }}>Switch ↗</button>
+        </div>
+        {names.length===0 && <div style={{ textAlign:"center", color:T.muted, fontSize:13, marginBottom:20 }}>Add your players below to get started.</div>}
+        <div style={{ fontSize:11, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginBottom:10 }}>Players</div>
         <div style={{ display:"flex", gap:8, marginBottom:8 }}>
           <input value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addPlayer()} placeholder="Add player name…"
-            style={{ flex:1, background:HT.surface, border:`1px solid ${HT.border}`, borderRadius:8, color:HT.text, padding:"10px 12px", fontFamily:mono, fontSize:14, outline:"none" }} />
-          <Btn T={HT} onClick={addPlayer} style={{ padding:"10px 16px" }}>Add</Btn>
+            style={{ flex:1, background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, color:T.text, padding:"10px 12px", fontFamily:mono, fontSize:14, outline:"none" }} />
+          <Btn T={T} onClick={addPlayer} style={{ padding:"10px 16px" }}>Add</Btn>
         </div>
         {newName.trim() && (
-          <Card T={HT} style={{ marginBottom:12 }}>
-            <ThemePicker value={newTheme} onChange={setNewTheme} T={HT} />
+          <Card T={T} style={{ marginBottom:12 }}>
+            <ThemePicker value={newTheme} onChange={setNewTheme} T={T} />
           </Card>
         )}
         <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
           {names.map(name=>(
             <div key={name} style={{ display:"flex", flexDirection:"column", gap:6 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:6, background:HT.surface, border:`1px solid ${HT.border}`, borderRadius:8, padding:"6px 10px" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:6, background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, padding:"6px 10px" }}>
                 <span style={{ width:10, height:10, borderRadius:"50%", background:THEMES[getSavedTheme(name)].accent, display:"inline-block", flexShrink:0 }} />
                 <span onClick={()=>setEditThemePlayer(editThemePlayer===name?null:name)} style={{ fontSize:13, fontWeight:600, cursor:"pointer", textDecoration:"underline dotted", textUnderlineOffset:3 }}>{name}</span>
-                <button onClick={()=>removePlayer(name)} style={{ background:"none", border:"none", color:HT.muted, cursor:"pointer", fontSize:14, lineHeight:1, padding:"0 2px" }}>×</button>
+                <button onClick={()=>removePlayer(name)} style={{ background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:14, lineHeight:1, padding:"0 2px" }}>×</button>
               </div>
               {editThemePlayer===name && (
-                <Card T={HT} style={{ marginBottom:4 }}>
-                  <ThemePicker value={getSavedTheme(name)} onChange={themeId => { saveThemeLocally(name, themeId); setEditThemePlayer(null); setActiveThemeId(DEFAULT_THEME); }} T={HT} />
+                <Card T={T} style={{ marginBottom:4 }}>
+                  <ThemePicker value={getSavedTheme(name)} onChange={themeId => { saveThemeLocally(name, themeId); setEditThemePlayer(null); setActiveThemeId(DEFAULT_THEME); }} T={T} />
                 </Card>
               )}
             </div>
