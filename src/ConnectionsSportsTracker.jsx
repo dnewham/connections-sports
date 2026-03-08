@@ -395,6 +395,7 @@ export default function App() {
   const [newTheme, setNewTheme]     = useState("default_dark");
   const [lbTab, setLbTab]           = useState("daily");
   const [activeThemeId, setActiveThemeId] = useState(DEFAULT_THEME);
+  const [editThemePlayer, setEditThemePlayer] = useState(null);
 
   useEffect(() => { loadData().then(setData); }, []);
 
@@ -748,10 +749,17 @@ export default function App() {
         )}
         <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
           {names.map(name=>(
-            <div key={name} style={{ display:"flex", alignItems:"center", gap:6, background:HT.surface, border:`1px solid ${HT.border}`, borderRadius:8, padding:"6px 10px" }}>
-              <span style={{ width:10, height:10, borderRadius:"50%", background:THEMES[getSavedTheme(name)].accent, display:"inline-block", flexShrink:0 }} />
-              <span style={{ fontSize:13, fontWeight:600 }}>{name}</span>
-              <button onClick={()=>removePlayer(name)} style={{ background:"none", border:"none", color:HT.muted, cursor:"pointer", fontSize:14, lineHeight:1, padding:"0 2px" }}>×</button>
+            <div key={name} style={{ display:"flex", flexDirection:"column", gap:6 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:6, background:HT.surface, border:`1px solid ${HT.border}`, borderRadius:8, padding:"6px 10px" }}>
+                <span style={{ width:10, height:10, borderRadius:"50%", background:THEMES[getSavedTheme(name)].accent, display:"inline-block", flexShrink:0 }} />
+                <span onClick={()=>setEditThemePlayer(editThemePlayer===name?null:name)} style={{ fontSize:13, fontWeight:600, cursor:"pointer", textDecoration:"underline dotted", textUnderlineOffset:3 }}>{name}</span>
+                <button onClick={()=>removePlayer(name)} style={{ background:"none", border:"none", color:HT.muted, cursor:"pointer", fontSize:14, lineHeight:1, padding:"0 2px" }}>×</button>
+              </div>
+              {editThemePlayer===name && (
+                <Card T={HT} style={{ marginBottom:4 }}>
+                  <ThemePicker value={getSavedTheme(name)} onChange={themeId => { saveThemeLocally(name, themeId); setEditThemePlayer(null); setActiveThemeId(DEFAULT_THEME); }} T={HT} />
+                </Card>
+              )}
             </div>
           ))}
         </div>
