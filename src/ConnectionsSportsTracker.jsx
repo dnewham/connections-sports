@@ -197,7 +197,7 @@ function getAllTimeWeeklyWins(games, players) {
 // ── Design tokens ──────────────────────────────────────────────────────────
 const T = { bg:"#0e0e12", surface:"#16161d", border:"#242430", text:"#e8e4f0", muted:"#6b6880", accent:"#F5C842", win:"#6DBF6D", loss:"#e07070" };
 const mono = "'DM Mono','Fira Mono',monospace";
-const display = "'Syne','DM Mono',monospace";
+const display = "'DM Mono','Fira Mono',monospace";
 
 // ── Shared UI ──────────────────────────────────────────────────────────────
 function Screen({ title, onBack, children }) {
