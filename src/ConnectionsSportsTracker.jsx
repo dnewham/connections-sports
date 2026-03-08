@@ -831,7 +831,7 @@ export default function App() {
           <Btn T={T} onClick={() => { setLogPlayer(activePlayer); setLogStep("paste"); setScreen("log"); }} style={{ gridColumn:"1/-1", padding:16, fontSize:16 }}>📋 Log a Result</Btn>
           <Btn T={T} variant="ghost" onClick={() => { setLbTab("daily"); setScreen("leaderboard"); }} style={{ padding:14 }}>🏆 Leaderboard</Btn>
           <Btn T={T} variant="ghost" onClick={() => setScreen("history")} style={{ padding:14 }}>📅 History</Btn>
-          <Btn T={T} variant="ghost" onClick={() => shareTodayResults(data.games, names, todayStr(), setCopied)} style={{ gridColumn:"1/-1", padding:14 }}>{copied ? "✓ Copied!" : "📤 Share Today’s Results"}</Btn>
+          <Btn T={T} variant="ghost" onClick={() => shareTodayResults(data.games, names, todayStr(), setCopied)} style={{ gridColumn:"1/-1", padding:14 }}>{copied ? "✓ Copied!" : "📤 Share Results"}</Btn>
         </div>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, padding:"10px 14px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:10 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8 }}>
