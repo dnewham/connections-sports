@@ -733,7 +733,11 @@ export default function App() {
                 <span>{game.puzzleNum?`Puzzle #${game.puzzleNum}`:game.date}</span>
                 {game.difficulty&&<span style={{ textTransform:"capitalize" }}>{game.difficulty}</span>}
               </div>
-              {game.players.map(entry=>(
+              {[...game.players].sort((a,b) => {
+                if (a.dnf && b.dnf) return 0;
+                if (a.dnf) return 1; if (b.dnf) return -1;
+                return (a.finalSeconds||0)-(b.finalSeconds||0);
+              }).map(entry=>(
                 <div key={entry.name} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"8px 0", borderTop:`1px solid ${T.border}` }}>
                   <div>
                     <div style={{ display:"flex", alignItems:"center", gap:8 }}>
