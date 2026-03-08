@@ -827,12 +827,12 @@ export default function App() {
             </div>
           </Card>
         )}
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:20 }}>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
           <Btn T={T} onClick={() => { setLogPlayer(activePlayer); setLogStep("paste"); setScreen("log"); }} style={{ gridColumn:"1/-1", padding:16, fontSize:16 }}>📋 Log a Result</Btn>
           <Btn T={T} variant="ghost" onClick={() => { setLbTab("daily"); setScreen("leaderboard"); }} style={{ padding:14 }}>🏆 Leaderboard</Btn>
           <Btn T={T} variant="ghost" onClick={() => setScreen("history")} style={{ padding:14 }}>📅 History</Btn>
-          <Btn T={T} variant="ghost" onClick={() => shareTodayResults(data.games, names, todayStr(), setCopied)} style={{ gridColumn:"1/-1", padding:14 }}>{copied ? "✓ Copied!" : "📤 Share Results"}</Btn>
         </div>
+        <Btn T={T} variant="ghost" onClick={() => shareTodayResults(data.games, names, todayStr(), setCopied)} style={{ width:"100%", marginBottom:20, padding:14, boxSizing:"border-box" }}>{copied ? "✓ Copied!" : "📤 Share Results"}</Btn>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, padding:"10px 14px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:10 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8 }}>
             <span style={{ width:10, height:10, borderRadius:"50%", background:T.accent, display:"inline-block" }} />
