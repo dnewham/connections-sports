@@ -156,8 +156,24 @@ function getLeaderboard(games, players) {
     });
 }
 
+// Find the puzzle number that was active on a given date
+// (the most recently submitted puzzle on or before that date)
+function getTodaysPuzzleNum(games, dateStr) {
+  // Find games submitted on this date
+  const todayGames = games.filter(g => g.date === dateStr && g.puzzleNum);
+  if (todayGames.length > 0) {
+    // Return the highest puzzle number submitted today
+    return Math.max(...todayGames.map(g => parseInt(g.puzzleNum)));
+  }
+  return null;
+}
+
 function getDailyLeaderboard(games, players, dateStr) {
-  const dayGames = games.filter(g => g.date === dateStr);
+  const puzzleNum = getTodaysPuzzleNum(games, dateStr);
+  // If we know today's puzzle number, filter by it; otherwise fall back to date
+  const dayGames = puzzleNum
+    ? games.filter(g => g.puzzleNum && parseInt(g.puzzleNum) === puzzleNum)
+    : games.filter(g => g.date === dateStr);
   const entries = [];
   for (const name of playerNames(players)) {
     for (const game of dayGames) {
@@ -456,7 +472,8 @@ export default function App() {
     if (existingIdx >= 0) {
       games[existingIdx] = { ...games[existingIdx], players: [...games[existingIdx].players.filter(p=>p.name!==logPlayer), entry] };
     } else {
-      games.unshift({ id:gameId, date:today, puzzleNum:parsed.puzzleNum, difficulty:parsed.difficulty, players:[entry] });
+      // submittedDate = today; puzzleNum is the authoritative identifier for "which day"
+      games.unshift({ id:gameId, date:today, submittedDate:today, puzzleNum:parsed.puzzleNum, difficulty:parsed.difficulty, players:[entry] });
     }
     await persist({ ...data, games });
     setLogStep("pick"); setLogPlayer(null); setPasteText(""); setParsed(null); setScore(null);
@@ -549,7 +566,10 @@ export default function App() {
           />
           {lbTab==="daily" && (
             <div>
-              <div style={{ fontSize:11, color:T.muted, textAlign:"center", marginBottom:14 }}>{today} · lowest adjusted time wins</div>
+              {(() => {
+                const pNum = getTodaysPuzzleNum(data.games, today);
+                return <div style={{ fontSize:11, color:T.muted, textAlign:"center", marginBottom:14 }}>{pNum ? `Puzzle #${pNum}` : today} · lowest adjusted time wins</div>;
+              })()}
               {dailyRanked.length===0 && <div style={{ color:T.muted, textAlign:"center", padding:40, fontSize:13 }}>No results logged today yet.</div>}
               {dailyRanked.map((p,idx) => (
                 <Card key={p.name} T={T} style={{ marginBottom:10, borderColor:idx===0?`${T.accent}40`:T.border }}>
