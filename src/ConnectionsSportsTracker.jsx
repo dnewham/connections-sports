@@ -396,8 +396,21 @@ function shareTodayResults(games, players, dateStr, setCopied) {
   const lines = entries.map((e, i) => {
     const medal = medals[i] || (i + 1) + ".";
     const time = e.dnf ? "DNF" : e.finalTime;
-    const grid = e.gridRows ? e.gridRows.map(row => row.map(c => colorEmoji[c] || "").join("")).join(" ") : "";
-    return medal + " " + e.name + "  " + time + "\n" + grid;
+    // Grid: each row on its own line
+    const grid = e.gridRows ? e.gridRows.map(row => row.map(c => colorEmoji[c] || "").join("")).join("\n") : "";
+    // Original time line
+    const origTime = e.rawTime && e.rawTime !== "DNF" ? "Original Time " + e.rawTime : "";
+    // Adjustments block
+    let adjBlock = "";
+    if (e.adjustments && e.adjustments.length > 0) {
+      const adjLines = e.adjustments.map(a => a.label + " (" + (a.seconds > 0 ? "+" : "") + a.seconds + "s)");
+      adjBlock = "Adjustments:\n" + adjLines.join("\n");
+    }
+    const parts = [medal + " " + e.name + "  " + time];
+    if (grid) parts.push(grid);
+    if (origTime) parts.push(origTime);
+    if (adjBlock) parts.push(adjBlock);
+    return parts.join("\n");
   });
   const text = header + "\n\n" + lines.join("\n\n");
   navigator.clipboard.writeText(text).then(() => {
