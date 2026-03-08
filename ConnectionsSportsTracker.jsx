@@ -35,9 +35,10 @@ function saveThemeLocally(name, themeId) {
 function parseShareText(text) {
   const errors = [];
   const timeMatch = text.match(/Time:\s*(\d{1,2}):(\d{2})/i);
-  if (!timeMatch) errors.push("Could not find Time (expected format MM:SS)");
-  const rawSeconds = timeMatch ? parseInt(timeMatch[1]) * 60 + parseInt(timeMatch[2]) : 0;
-  const rawTime = timeMatch ? `${timeMatch[1].padStart(2,"0")}:${timeMatch[2]}` : "??:??";
+  // No time = DNF (player used all 4 guesses without finishing)
+  const dnf = !timeMatch;
+  const rawSeconds = timeMatch ? parseInt(timeMatch[1]) * 60 + parseInt(timeMatch[2]) : null;
+  const rawTime = timeMatch ? `${timeMatch[1].padStart(2,"0")}:${timeMatch[2]}` : "DNF";
   const puzzleMatch = text.match(/puzzle\s*#?(\d+)/i);
   const puzzleNum = puzzleMatch ? puzzleMatch[1] : null;
   const diffMatch = text.match(/ranked\s+([a-z\s]+?)(?:\.|Average|\n|$)/i);
@@ -62,11 +63,12 @@ function parseShareText(text) {
     if (rowColors.length >= 2) gridRows.push(rowColors);
   }
   if (gridRows.length === 0) errors.push("Could not find emoji grid in share text");
-  return { rawTime, rawSeconds, puzzleNum, difficulty, gridRows, errors };
+  return { rawTime, rawSeconds, puzzleNum, difficulty, gridRows, errors, dnf };
 }
 
 // ── Scoring engine ─────────────────────────────────────────────────────────
-function calcScore({ rawSeconds, gridRows }) {
+function calcScore({ rawSeconds, gridRows, dnf }) {
+  if (dnf) return { adjustments: [], delta: 0, finalSeconds: null, finalTime: "DNF", dnf: true };
   const adjustments = [];
   let delta = 0;
   gridRows.forEach((row, idx) => {
@@ -83,7 +85,7 @@ function calcScore({ rawSeconds, gridRows }) {
   });
   const finalSeconds = Math.max(0, rawSeconds + delta);
   const fmtT = s => `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
-  return { adjustments, delta, finalSeconds, finalTime: fmtT(finalSeconds) };
+  return { adjustments, delta, finalSeconds, finalTime: fmtT(finalSeconds), dnf: false };
 }
 
 // ── Storage (Firebase Firestore) ───────────────────────────────────────────
@@ -154,10 +156,14 @@ function getDailyLeaderboard(games, players, dateStr) {
   for (const name of playerNames(players)) {
     for (const game of dayGames) {
       const p = game.players.find(e => e.name === name);
-      if (p) entries.push({ name, finalSeconds: p.finalSeconds, submittedAt: p.submittedAt || 0, finalTime: p.finalTime });
+      if (p) entries.push({ name, finalSeconds: p.finalSeconds, submittedAt: p.submittedAt || 0, finalTime: p.finalTime, dnf: p.dnf || false });
     }
   }
   return entries.sort((a,b) => {
+    // DNFs always rank last
+    if (a.dnf && b.dnf) return a.submittedAt - b.submittedAt;
+    if (a.dnf) return 1;
+    if (b.dnf) return -1;
     if (a.finalSeconds !== b.finalSeconds) return a.finalSeconds - b.finalSeconds;
     return a.submittedAt - b.submittedAt;
   });
@@ -168,17 +174,26 @@ function getWeeklyLeaderboard(games, players, weekStr) {
   const dates = [...new Set(weekGames.map(g => g.date))].sort();
   const names = playerNames(players);
   const stats = {};
-  for (const name of names) stats[name] = { name, wins: 0, cumSeconds: 0, played: 0 };
+  for (const name of names) stats[name] = { name, wins: 0, dnfs: 0, cumSeconds: 0, played: 0 };
   for (const date of dates) {
     const ranked = getDailyLeaderboard(weekGames, names, date);
     if (ranked.length === 0) continue;
     const winner = ranked[0];
-    if (stats[winner.name]) stats[winner.name].wins++;
+    // Only award win if the top player actually finished
+    if (stats[winner.name] && !winner.dnf) stats[winner.name].wins++;
     for (const entry of ranked) {
-      if (stats[entry.name]) { stats[entry.name].cumSeconds += entry.finalSeconds; stats[entry.name].played++; }
+      if (stats[entry.name]) {
+        // Only add to cumulative time if they finished
+        if (entry.dnf) { stats[entry.name].dnfs++; } else { stats[entry.name].cumSeconds += entry.finalSeconds; }
+        stats[entry.name].played++;
+      }
     }
   }
-  return Object.values(stats).sort((a,b) => b.wins !== a.wins ? b.wins - a.wins : a.cumSeconds - b.cumSeconds);
+  return Object.values(stats).sort((a,b) => {
+    if (b.wins !== a.wins) return b.wins - a.wins;     // 1. Most wins
+    if (a.dnfs !== b.dnfs) return a.dnfs - b.dnfs;     // 2. Fewest DNFs
+    return a.cumSeconds - b.cumSeconds;                 // 3. Lowest cumulative time
+  });
 }
 
 function getAllTimeDailyWins(games, players) {
@@ -253,28 +268,37 @@ function ParsePreview({ parsed, score, T }) {
         </div>
         <GridPreview gridRows={gridRows} />
       </div>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr auto 1fr", alignItems:"center", gap:8, marginBottom:14 }}>
-        <div style={{ textAlign:"center" }}>
-          <div style={{ fontFamily:display, fontWeight:800, fontSize:22, color:T.muted }}>{rawTime}</div>
-          <div style={{ fontSize:10, color:T.muted, letterSpacing:"0.08em", textTransform:"uppercase", marginTop:2 }}>Raw Time</div>
-        </div>
-        <div style={{ color:T.muted, fontSize:18 }}>→</div>
-        <div style={{ textAlign:"center" }}>
-          <div style={{ fontFamily:display, fontWeight:800, fontSize:22, color:T.accent }}>{finalTime}</div>
-          <div style={{ fontSize:10, color:T.muted, letterSpacing:"0.08em", textTransform:"uppercase", marginTop:2 }}>Final Time</div>
-        </div>
-      </div>
-      {adjustments.length > 0 ? (
-        <div style={{ background:T.bg, borderRadius:8, padding:"10px 12px" }}>
-          {adjustments.map((a,i) => (
-            <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:a.seconds>0?"#e07070":"#6DBF6D", padding:"3px 0" }}>
-              <span>Rule {a.rule}: {a.label}</span>
-              <span style={{ fontFamily:display, fontWeight:700 }}>{a.seconds>0?`+${a.seconds}s`:`${a.seconds}s`}</span>
-            </div>
-          ))}
+      {score.dnf ? (
+        <div style={{ textAlign:"center", padding:"16px 0" }}>
+          <div style={{ fontFamily:display, fontWeight:800, fontSize:36, color:"#e07070" }}>DNF</div>
+          <div style={{ fontSize:12, color:T.muted, marginTop:6 }}>Did Not Finish — all 4 guesses used</div>
         </div>
       ) : (
-        <div style={{ fontSize:12, color:T.muted, textAlign:"center" }}>No adjustments — clean base time!</div>
+        <>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr auto 1fr", alignItems:"center", gap:8, marginBottom:14 }}>
+            <div style={{ textAlign:"center" }}>
+              <div style={{ fontFamily:display, fontWeight:800, fontSize:22, color:T.muted }}>{rawTime}</div>
+              <div style={{ fontSize:10, color:T.muted, letterSpacing:"0.08em", textTransform:"uppercase", marginTop:2 }}>Raw Time</div>
+            </div>
+            <div style={{ color:T.muted, fontSize:18 }}>→</div>
+            <div style={{ textAlign:"center" }}>
+              <div style={{ fontFamily:display, fontWeight:800, fontSize:22, color:T.accent }}>{finalTime}</div>
+              <div style={{ fontSize:10, color:T.muted, letterSpacing:"0.08em", textTransform:"uppercase", marginTop:2 }}>Final Time</div>
+            </div>
+          </div>
+          {adjustments.length > 0 ? (
+            <div style={{ background:T.bg, borderRadius:8, padding:"10px 12px" }}>
+              {adjustments.map((a,i) => (
+                <div key={i} style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:a.seconds>0?"#e07070":"#6DBF6D", padding:"3px 0" }}>
+                  <span>Rule {a.rule}: {a.label}</span>
+                  <span style={{ fontFamily:display, fontWeight:700 }}>{a.seconds>0?`+${a.seconds}s`:`${a.seconds}s`}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize:12, color:T.muted, textAlign:"center" }}>No adjustments — clean base time!</div>
+          )}
+        </>
       )}
     </div>
   );
@@ -413,6 +437,7 @@ export default function App() {
       puzzleNum: parsed.puzzleNum,
       difficulty: parsed.difficulty,
       submittedAt: Date.now(),
+      dnf: score.dnf || false,
     };
     const today = new Date().toISOString().slice(0,10);
     const gameId = parsed.puzzleNum ? `puzzle-${parsed.puzzleNum}` : `date-${today}`;
@@ -514,8 +539,8 @@ export default function App() {
                       </div>
                     </div>
                     <div style={{ textAlign:"right" }}>
-                      <div style={{ fontFamily:display, fontWeight:800, fontSize:20, color:LT.accent }}>{p.finalTime}</div>
-                      <div style={{ fontSize:10, color:LT.muted, letterSpacing:"0.06em", textTransform:"uppercase" }}>Final Time</div>
+                      <div style={{ fontFamily:display, fontWeight:800, fontSize:20, color:p.dnf?"#e07070":LT.accent }}>{p.finalTime}</div>
+                      <div style={{ fontSize:10, color:LT.muted, letterSpacing:"0.06em", textTransform:"uppercase" }}>{p.dnf?"DNF":"Final Time"}</div>
                     </div>
                   </div>
                 </Card>
@@ -545,7 +570,7 @@ export default function App() {
                   </div>
                 </Card>
               ))}
-              {weeklyRanked.some(p=>p.played>0) && <div style={{ fontSize:11, color:LT.muted, textAlign:"center", marginTop:8 }}>Tiebreak: lowest cumulative time</div>}
+              {weeklyRanked.some(p=>p.played>0) && <div style={{ fontSize:11, color:LT.muted, textAlign:"center", marginTop:8 }}>Tiebreaks: fewest DNFs → lowest cumulative time</div>}
             </div>
           )}
           {lbTab==="alltime" && (
@@ -627,8 +652,8 @@ export default function App() {
                     )}
                   </div>
                   <div style={{ textAlign:"right", marginLeft:12 }}>
-                    <div style={{ fontFamily:display, fontWeight:800, fontSize:18, color:DT.accent }}>{entry.finalTime}</div>
-                    <div style={{ fontSize:10, color:DT.muted, marginTop:2 }}>raw {entry.rawTime}</div>
+                    <div style={{ fontFamily:display, fontWeight:800, fontSize:18, color:entry.dnf?"#e07070":DT.accent }}>{entry.finalTime}</div>
+                    <div style={{ fontSize:10, color:DT.muted, marginTop:2 }}>{entry.dnf?"Did Not Finish":`raw ${entry.rawTime}`}</div>
                   </div>
                 </div>
               </Card>
@@ -666,8 +691,8 @@ export default function App() {
                     </div>
                   </div>
                   <div style={{ textAlign:"right" }}>
-                    <div style={{ fontFamily:display, fontWeight:800, fontSize:16, color:HT.accent }}>{entry.finalTime}</div>
-                    <div style={{ fontSize:10, color:HT.muted }}>raw {entry.rawTime}</div>
+                    <div style={{ fontFamily:display, fontWeight:800, fontSize:16, color:entry.dnf?"#e07070":HT.accent }}>{entry.finalTime}</div>
+                    <div style={{ fontSize:10, color:HT.muted }}>{entry.dnf?"Did Not Finish":`raw ${entry.rawTime}`}</div>
                   </div>
                 </div>
               ))}
