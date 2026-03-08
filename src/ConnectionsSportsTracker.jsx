@@ -43,10 +43,6 @@ function parseShareText(text) {
 }
 
 // ── Scoring engine ─────────────────────────────────────────────────────────
-// Rule A: Each mixed-color row (incorrect guess) → +5 seconds
-// Rule B: Row 1 is all Purple → −15 seconds
-// Rule C: Row 1 is all Blue → −5 seconds
-// Rule D: Row 2 is all Purple → −10 seconds
 function calcScore({ rawSeconds, gridRows }) {
   const adjustments = [];
   let delta = 0;
@@ -89,18 +85,113 @@ async function saveData(d) {
   catch(e) { console.error("saveData error", e); }
 }
 
+// ── Date helpers ───────────────────────────────────────────────────────────
+function getISOWeek(dateStr) {
+  // Returns "YYYY-Www" for a given YYYY-MM-DD date, Mon-Sun weeks
+  const d = new Date(dateStr + "T12:00:00");
+  const day = d.getDay(); // 0=Sun
+  const mon = new Date(d);
+  mon.setDate(d.getDate() - ((day + 6) % 7)); // back to Monday
+  const year = mon.getFullYear();
+  const startOfYear = new Date(year, 0, 1);
+  const weekNum = Math.ceil(((mon - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7);
+  return `${year}-W${String(weekNum).padStart(2,"0")}`;
+}
+
+function todayStr() { return new Date().toISOString().slice(0,10); }
+function thisWeekStr() { return getISOWeek(todayStr()); }
+
 // ── Leaderboard helpers ────────────────────────────────────────────────────
+const fmt = s => s == null ? "—:—" : `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
+
 function getPlayerStats(games, name) {
-  const entries = games.filter(g => g.players.some(p => p.name === name)).map(g => g.players.find(p => p.name === name));
+  const entries = games
+    .filter(g => g.players.some(p => p.name === name))
+    .map(g => g.players.find(p => p.name === name));
   const finalTimes = entries.map(e => e.finalSeconds).filter(n => n != null);
   const bestFinal = finalTimes.length ? Math.min(...finalTimes) : null;
   const avgFinal  = finalTimes.length ? Math.round(finalTimes.reduce((a,b)=>a+b,0)/finalTimes.length) : null;
-  const fmt = s => s == null ? "—:—" : `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
   return { played: entries.length, bestFinal, avgFinal, fmtBest: fmt(bestFinal), fmtAvg: fmt(avgFinal) };
 }
+
 function getLeaderboard(games, players) {
   return players.map(name => ({ name, ...getPlayerStats(games, name) }))
-    .sort((a,b) => { if (a.bestFinal==null&&b.bestFinal==null) return 0; if (a.bestFinal==null) return 1; if (b.bestFinal==null) return -1; return a.bestFinal-b.bestFinal; });
+    .sort((a,b) => {
+      if (a.bestFinal==null&&b.bestFinal==null) return 0;
+      if (a.bestFinal==null) return 1;
+      if (b.bestFinal==null) return -1;
+      return a.bestFinal-b.bestFinal;
+    });
+}
+
+// Daily leaderboard: for a given date, rank players by finalSeconds ASC,
+// tiebreak by submittedAt ASC (timestamp recorded at save time)
+function getDailyLeaderboard(games, players, dateStr) {
+  const dayGames = games.filter(g => g.date === dateStr);
+  const entries = [];
+  for (const name of players) {
+    for (const game of dayGames) {
+      const p = game.players.find(e => e.name === name);
+      if (p) entries.push({ name, finalSeconds: p.finalSeconds, submittedAt: p.submittedAt || 0, finalTime: p.finalTime });
+    }
+  }
+  return entries.sort((a,b) => {
+    if (a.finalSeconds !== b.finalSeconds) return a.finalSeconds - b.finalSeconds;
+    return a.submittedAt - b.submittedAt; // tiebreak: first to submit
+  });
+}
+
+// Weekly leaderboard: Mon-Sun week identified by ISO week string
+// Winner = most daily wins; tiebreak = lowest cumulative adjusted time
+function getWeeklyLeaderboard(games, players, weekStr) {
+  const weekGames = games.filter(g => g.date && getISOWeek(g.date) === weekStr);
+  // Get all unique dates in this week
+  const dates = [...new Set(weekGames.map(g => g.date))].sort();
+
+  const stats = {};
+  for (const name of players) stats[name] = { name, wins: 0, cumSeconds: 0, played: 0 };
+
+  for (const date of dates) {
+    const ranked = getDailyLeaderboard(weekGames, players, date);
+    if (ranked.length === 0) continue;
+    const winner = ranked[0];
+    if (stats[winner.name]) stats[winner.name].wins++;
+    for (const entry of ranked) {
+      if (stats[entry.name]) {
+        stats[entry.name].cumSeconds += entry.finalSeconds;
+        stats[entry.name].played++;
+      }
+    }
+  }
+
+  return Object.values(stats).sort((a,b) => {
+    if (b.wins !== a.wins) return b.wins - a.wins; // more wins = better
+    return a.cumSeconds - b.cumSeconds; // tiebreak: lower cumulative time
+  });
+}
+
+// All-time daily wins per player
+function getAllTimeDailyWins(games, players) {
+  const wins = {};
+  for (const name of players) wins[name] = 0;
+  const dates = [...new Set(games.map(g => g.date).filter(Boolean))].sort();
+  for (const date of dates) {
+    const ranked = getDailyLeaderboard(games, players, date);
+    if (ranked.length > 0 && wins[ranked[0].name] != null) wins[ranked[0].name]++;
+  }
+  return players.map(name => ({ name, wins: wins[name] })).sort((a,b) => b.wins - a.wins);
+}
+
+// All-time weekly wins per player
+function getAllTimeWeeklyWins(games, players) {
+  const wins = {};
+  for (const name of players) wins[name] = 0;
+  const weeks = [...new Set(games.map(g => g.date ? getISOWeek(g.date) : null).filter(Boolean))];
+  for (const week of weeks) {
+    const ranked = getWeeklyLeaderboard(games, players, week);
+    if (ranked.length > 0 && ranked[0].wins > 0 && wins[ranked[0].name] != null) wins[ranked[0].name]++;
+  }
+  return players.map(name => ({ name, wins: wins[name] })).sort((a,b) => b.wins - a.wins);
 }
 
 // ── Design tokens ──────────────────────────────────────────────────────────
@@ -179,19 +270,59 @@ function ParsePreview({ parsed, score }) {
   );
 }
 
+// ── Bar Chart ──────────────────────────────────────────────────────────────
+function WinsBarChart({ data, label }) {
+  const max = Math.max(...data.map(d => d.wins), 1);
+  return (
+    <div>
+      <div style={{ fontSize:11, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginBottom:10 }}>{label}</div>
+      {data.map((d, i) => (
+        <div key={d.name} style={{ marginBottom:10 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", fontSize:12, marginBottom:4 }}>
+            <span style={{ fontWeight:700 }}>{["🥇","🥈","🥉"][i] || ""} {d.name}</span>
+            <span style={{ color:T.accent, fontFamily:display, fontWeight:800 }}>{d.wins}</span>
+          </div>
+          <div style={{ background:T.border, borderRadius:4, height:8, overflow:"hidden" }}>
+            <div style={{ height:"100%", width:`${(d.wins/max)*100}%`, background: i===0 ? T.accent : T.muted, borderRadius:4, transition:"width 0.4s ease" }} />
+          </div>
+        </div>
+      ))}
+      {data.every(d => d.wins === 0) && <div style={{ color:T.muted, fontSize:12, textAlign:"center", padding:"10px 0" }}>No wins yet</div>}
+    </div>
+  );
+}
+
+// ── Tab Bar ────────────────────────────────────────────────────────────────
+function Tabs({ tabs, active, onChange }) {
+  return (
+    <div style={{ display:"flex", gap:4, background:T.surface, borderRadius:10, padding:4, marginBottom:16 }}>
+      {tabs.map(t => (
+        <button key={t.id} onClick={() => onChange(t.id)} style={{
+          flex:1, padding:"8px 4px", border:"none", borderRadius:7, cursor:"pointer", fontFamily:mono,
+          fontSize:11, fontWeight:700, letterSpacing:"0.04em", textTransform:"uppercase",
+          background: active===t.id ? T.accent : "transparent",
+          color: active===t.id ? "#111" : T.muted,
+          transition:"all .15s"
+        }}>{t.label}</button>
+      ))}
+    </div>
+  );
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 export default function App() {
-  const [data, setData]           = useState(null);
-  const [screen, setScreen]       = useState("home");
-  const [detail, setDetail]       = useState(null);
-  const [saving, setSaving]       = useState(false);
-  const [logStep, setLogStep]     = useState("pick");
-  const [logPlayer, setLogPlayer] = useState(null);
-  const [pasteText, setPasteText] = useState("");
-  const [parsed, setParsed]       = useState(null);
-  const [score, setScore]         = useState(null);
+  const [data, setData]             = useState(null);
+  const [screen, setScreen]         = useState("home");
+  const [detail, setDetail]         = useState(null);
+  const [saving, setSaving]         = useState(false);
+  const [logStep, setLogStep]       = useState("pick");
+  const [logPlayer, setLogPlayer]   = useState(null);
+  const [pasteText, setPasteText]   = useState("");
+  const [parsed, setParsed]         = useState(null);
+  const [score, setScore]           = useState(null);
   const [parseError, setParseError] = useState([]);
-  const [newName, setNewName]     = useState("");
+  const [newName, setNewName]       = useState("");
+  const [lbTab, setLbTab]           = useState("daily");
 
   useEffect(() => { loadData().then(setData); }, []);
   const persist = useCallback(async next => { setSaving(true); setData(next); await saveData(next); setSaving(false); }, []);
@@ -224,6 +355,7 @@ export default function App() {
       mistakes: parsed.gridRows.filter(r => !r.every(c => c === r[0])).length,
       puzzleNum: parsed.puzzleNum,
       difficulty: parsed.difficulty,
+      submittedAt: Date.now(), // for daily tiebreaking
     };
     const today = new Date().toISOString().slice(0,10);
     const gameId = parsed.puzzleNum ? `puzzle-${parsed.puzzleNum}` : `date-${today}`;
@@ -289,27 +421,101 @@ export default function App() {
 
   // ── LEADERBOARD ─────────────────────────────────────────────────────────
   if (screen==="leaderboard") {
-    const lb = getLeaderboard(data.games, data.players);
+    const today = todayStr();
+    const thisWeek = thisWeekStr();
+    const dailyRanked  = getDailyLeaderboard(data.games, data.players, today);
+    const weeklyRanked = getWeeklyLeaderboard(data.games, data.players, thisWeek);
+    const allTimeLb    = getLeaderboard(data.games, data.players);
+
     return (
       <Screen title="Leaderboard" onBack={() => setScreen("home")}>
         <div style={{ marginTop:16 }}>
-          {lb.length===0 && <div style={{ color:T.muted, textAlign:"center", padding:40, fontSize:13 }}>No games logged yet.</div>}
-          {lb.map((p,idx) => (
-            <Card key={p.name} onClick={() => { setDetail(p.name); setScreen("playerDetail"); }} style={{ marginBottom:10, borderColor:idx===0?"#F5C84240":T.border }}>
-              <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-                <div style={{ fontSize:20, minWidth:28 }}>{["🥇","🥈","🥉"][idx]||`${idx+1}.`}</div>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontWeight:700, fontSize:15 }}>{p.name}</div>
-                  <div style={{ fontSize:11, color:T.muted, marginTop:3 }}>{p.played} game{p.played!==1?"s":""} · avg {p.fmtAvg}</div>
-                </div>
-                <div style={{ textAlign:"right" }}>
-                  <div style={{ fontFamily:display, fontWeight:800, fontSize:20, color:T.accent }}>{p.fmtBest}</div>
-                  <div style={{ fontSize:10, color:T.muted, letterSpacing:"0.06em", textTransform:"uppercase" }}>Best</div>
-                </div>
+          <Tabs
+            tabs={[{ id:"daily", label:"Today" }, { id:"weekly", label:"This Week" }, { id:"alltime", label:"All Time" }]}
+            active={lbTab}
+            onChange={setLbTab}
+          />
+
+          {/* ── DAILY TAB ── */}
+          {lbTab==="daily" && (
+            <div>
+              <div style={{ fontSize:11, color:T.muted, textAlign:"center", marginBottom:14 }}>{today} · lowest adjusted time wins</div>
+              {dailyRanked.length===0 && <div style={{ color:T.muted, textAlign:"center", padding:40, fontSize:13 }}>No results logged today yet.</div>}
+              {dailyRanked.map((p,idx) => (
+                <Card key={p.name} style={{ marginBottom:10, borderColor:idx===0?`${T.accent}40`:T.border }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                    <div style={{ fontSize:20, minWidth:28 }}>{["🥇","🥈","🥉"][idx]||`${idx+1}.`}</div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontWeight:700, fontSize:15 }}>{p.name}</div>
+                    </div>
+                    <div style={{ textAlign:"right" }}>
+                      <div style={{ fontFamily:display, fontWeight:800, fontSize:20, color:T.accent }}>{p.finalTime}</div>
+                      <div style={{ fontSize:10, color:T.muted, letterSpacing:"0.06em", textTransform:"uppercase" }}>Final Time</div>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+              {dailyRanked.length>0 && <div style={{ fontSize:11, color:T.muted, textAlign:"center", marginTop:8 }}>Tiebreak: first to submit</div>}
+            </div>
+          )}
+
+          {/* ── WEEKLY TAB ── */}
+          {lbTab==="weekly" && (
+            <div>
+              <div style={{ fontSize:11, color:T.muted, textAlign:"center", marginBottom:14 }}>Week of {thisWeek} · Mon–Sun</div>
+              {weeklyRanked.every(p=>p.played===0) && <div style={{ color:T.muted, textAlign:"center", padding:40, fontSize:13 }}>No results logged this week yet.</div>}
+              {weeklyRanked.filter(p=>p.played>0).map((p,idx) => (
+                <Card key={p.name} style={{ marginBottom:10, borderColor:idx===0?`${T.accent}40`:T.border }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                    <div style={{ fontSize:20, minWidth:28 }}>{["🥇","🥈","🥉"][idx]||`${idx+1}.`}</div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontWeight:700, fontSize:15 }}>{p.name}</div>
+                      <div style={{ fontSize:11, color:T.muted, marginTop:3 }}>{p.played} day{p.played!==1?"s":""} played · {fmt(p.cumSeconds)} cumulative</div>
+                    </div>
+                    <div style={{ textAlign:"right" }}>
+                      <div style={{ fontFamily:display, fontWeight:800, fontSize:24, color:T.accent }}>{p.wins}</div>
+                      <div style={{ fontSize:10, color:T.muted, letterSpacing:"0.06em", textTransform:"uppercase" }}>Daily Wins</div>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+              {weeklyRanked.some(p=>p.played>0) && <div style={{ fontSize:11, color:T.muted, textAlign:"center", marginTop:8 }}>Tiebreak: lowest cumulative time</div>}
+            </div>
+          )}
+
+          {/* ── ALL TIME TAB ── */}
+          {lbTab==="alltime" && (
+            <div>
+              {/* Best time leaderboard */}
+              <div style={{ marginBottom:20 }}>
+                <div style={{ fontSize:11, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginBottom:10 }}>Best Time</div>
+                {allTimeLb.map((p,idx) => (
+                  <Card key={p.name} onClick={() => { setDetail(p.name); setScreen("playerDetail"); }} style={{ marginBottom:8, borderColor:idx===0?`${T.accent}40`:T.border }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                      <div style={{ fontSize:18, minWidth:28 }}>{["🥇","🥈","🥉"][idx]||`${idx+1}.`}</div>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontWeight:700, fontSize:14 }}>{p.name}</div>
+                        <div style={{ fontSize:11, color:T.muted, marginTop:2 }}>{p.played} game{p.played!==1?"s":""} · avg {p.fmtAvg}</div>
+                      </div>
+                      <div style={{ textAlign:"right" }}>
+                        <div style={{ fontFamily:display, fontWeight:800, fontSize:18, color:T.accent }}>{p.fmtBest}</div>
+                        <div style={{ fontSize:10, color:T.muted, letterSpacing:"0.06em", textTransform:"uppercase" }}>Best</div>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+                {allTimeLb.length>0 && <div style={{ fontSize:11, color:T.muted, textAlign:"center", marginTop:4 }}>Tap for player details</div>}
               </div>
-            </Card>
-          ))}
-          {lb.length>0 && <div style={{ fontSize:11, color:T.muted, textAlign:"center", marginTop:8 }}>Lowest final time wins · tap for details</div>}
+
+              {/* Win charts */}
+              <Card style={{ marginBottom:12 }}>
+                <WinsBarChart data={getAllTimeDailyWins(data.games, data.players)} label="All-Time Daily Wins" />
+              </Card>
+              <Card>
+                <WinsBarChart data={getAllTimeWeeklyWins(data.games, data.players)} label="All-Time Weekly Wins" />
+              </Card>
+            </div>
+          )}
         </div>
       </Screen>
     );
@@ -319,15 +525,17 @@ export default function App() {
   if (screen==="playerDetail" && detail) {
     const stats = getPlayerStats(data.games, detail);
     const playerGames = data.games.filter(g => g.players.some(p => p.name===detail));
+    const dailyWins = getAllTimeDailyWins(data.games, data.players).find(p=>p.name===detail)?.wins || 0;
+    const weeklyWins = getAllTimeWeeklyWins(data.games, data.players).find(p=>p.name===detail)?.wins || 0;
     return (
       <Screen title={detail} onBack={() => setScreen("leaderboard")}>
         <div style={{ marginTop:16 }}>
           <Card style={{ marginBottom:12 }}>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, textAlign:"center" }}>
-              {[["Games",stats.played],["Best",stats.fmtBest],["Avg",stats.fmtAvg]].map(([l,v])=>(
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, textAlign:"center" }}>
+              {[["Games",stats.played],["Best",stats.fmtBest],["Daily W",dailyWins],["Weekly W",weeklyWins]].map(([l,v])=>(
                 <div key={l}>
-                  <div style={{ fontFamily:display, fontWeight:800, fontSize:22, color:T.accent }}>{v}</div>
-                  <div style={{ fontSize:10, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginTop:3 }}>{l}</div>
+                  <div style={{ fontFamily:display, fontWeight:800, fontSize:18, color:T.accent }}>{v}</div>
+                  <div style={{ fontSize:9, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginTop:3 }}>{l}</div>
                 </div>
               ))}
             </div>
@@ -401,21 +609,32 @@ export default function App() {
 
   // ── HOME ─────────────────────────────────────────────────────────────────
   const lb = getLeaderboard(data.games, data.players);
+  const todayWinner = getDailyLeaderboard(data.games, data.players, todayStr())[0];
+  const weekWinner  = getWeeklyLeaderboard(data.games, data.players, thisWeekStr()).find(p=>p.wins>0);
   return (
     <Screen title="🏆 MBA Friends Connections">
       <div style={{ marginTop:20 }}>
         {data.games.length>0 && (
           <Card style={{ marginBottom:20 }}>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, textAlign:"center" }}>
-              <div><div style={{ fontFamily:display, fontWeight:800, fontSize:26, color:T.accent }}>{data.games.length}</div><div style={{ fontSize:10, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginTop:3 }}>Games</div></div>
-              <div><div style={{ fontFamily:display, fontWeight:800, fontSize:26, color:T.accent }}>{data.players.length}</div><div style={{ fontSize:10, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginTop:3 }}>Players</div></div>
-              <div><div style={{ fontFamily:display, fontWeight:800, fontSize:16, color:T.accent, lineHeight:1.2, marginTop:4 }}>{lb[0]?.name?.split(" ")[0]||"—"}</div><div style={{ fontSize:10, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginTop:5 }}>Leading</div></div>
+              <div>
+                <div style={{ fontFamily:display, fontWeight:800, fontSize:26, color:T.accent }}>{data.games.length}</div>
+                <div style={{ fontSize:10, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginTop:3 }}>Games</div>
+              </div>
+              <div>
+                <div style={{ fontFamily:display, fontWeight:800, fontSize:14, color:T.accent, lineHeight:1.2, marginTop:4 }}>{todayWinner?.name?.split(" ")[0]||"—"}</div>
+                <div style={{ fontSize:10, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginTop:5 }}>Today</div>
+              </div>
+              <div>
+                <div style={{ fontFamily:display, fontWeight:800, fontSize:14, color:T.accent, lineHeight:1.2, marginTop:4 }}>{weekWinner?.name?.split(" ")[0]||"—"}</div>
+                <div style={{ fontSize:10, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginTop:5 }}>This Week</div>
+              </div>
             </div>
           </Card>
         )}
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:20 }}>
           <Btn onClick={() => { setLogStep("pick"); setScreen("log"); }} disabled={data.players.length===0} style={{ gridColumn:"1/-1", padding:16, fontSize:16 }}>📋 Log a Result</Btn>
-          <Btn variant="ghost" onClick={() => setScreen("leaderboard")} style={{ padding:14 }}>🏆 Leaderboard</Btn>
+          <Btn variant="ghost" onClick={() => { setLbTab("daily"); setScreen("leaderboard"); }} style={{ padding:14 }}>🏆 Leaderboard</Btn>
           <Btn variant="ghost" onClick={() => setScreen("history")} style={{ padding:14 }}>📅 History</Btn>
         </div>
         {data.players.length===0 && <div style={{ textAlign:"center", color:T.muted, fontSize:13, marginBottom:20 }}>Add your players below to get started.</div>}
