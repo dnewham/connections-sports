@@ -76,14 +76,16 @@ const DOC_REF = () => doc(db, "appdata", "main");
 async function loadData() {
   try {
     const snap = await getDoc(DOC_REF());
-    return snap.exists() ? snap.data() : { players: [], games: [] };
+    if (!snap.exists()) return { players: [], games: [] };
+    const raw = snap.data().json;
+    return raw ? JSON.parse(raw) : { players: [], games: [] };
   } catch(e) {
     console.error("loadData error", e);
     return { players: [], games: [] };
   }
 }
 async function saveData(d) {
-  try { await setDoc(DOC_REF(), d); }
+  try { await setDoc(DOC_REF(), { json: JSON.stringify(d) }); }
   catch(e) { console.error("saveData error", e); }
 }
 
