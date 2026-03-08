@@ -402,7 +402,7 @@ export default function App() {
   // ── HOME ─────────────────────────────────────────────────────────────────
   const lb = getLeaderboard(data.games, data.players);
   return (
-    <Screen title="🏆 MBA Friends Sports Connections">
+    <Screen title="🏆 MBA Friends Connections">
       <div style={{ marginTop:20 }}>
         {data.games.length>0 && (
           <Card style={{ marginBottom:20 }}>
