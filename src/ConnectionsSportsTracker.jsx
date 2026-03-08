@@ -206,7 +206,7 @@ function Screen({ title, onBack, children }) {
       <div style={{ maxWidth:480, margin:"0 auto", padding:"0 16px 80px" }}>
         <div style={{ display:"flex", alignItems:"center", gap:10, padding:"18px 0 14px", borderBottom:`1px solid ${T.border}` }}>
           {onBack && <button onClick={onBack} style={{ background:"none", border:"none", color:T.muted, fontSize:20, cursor:"pointer", padding:"2px 10px 2px 0" }}>←</button>}
-          <h1 style={{ margin:0, fontFamily:display, fontSize:11, fontWeight:800, letterSpacing:"0.04em", textTransform:"uppercase", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{title}</h1>
+          <h1 style={{ margin:0, fontFamily:display, fontSize:"clamp(10px, 1.8vw, 15px)", fontWeight:800, letterSpacing:"0.04em", textTransform:"uppercase", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{title}</h1>
         </div>
         {children}
       </div>
