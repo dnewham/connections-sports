@@ -40,7 +40,7 @@ function saveThemeLocally(name, themeId) {
 // ── Share-text parser ──────────────────────────────────────────────────────
 function parseShareText(text) {
   const errors = [];
-  const timeMatch = text.match(/Time:\s*(\d{1,2}):(\d{2})/i);
+  const timeMatch = text.match(/(?:Time:\s*|in\s+)(\d{1,2}):(\d{2})/i);
   const dnf = !timeMatch;
   if (!timeMatch) errors.push("Could not find Time (expected format MM:SS)");
   const rawSeconds = timeMatch ? parseInt(timeMatch[1]) * 60 + parseInt(timeMatch[2]) : null;
