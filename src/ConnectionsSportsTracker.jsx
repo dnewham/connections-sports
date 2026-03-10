@@ -127,7 +127,7 @@ function getISOWeek(dateStr) {
   const weekNum = Math.ceil(((mon - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7);
   return `${year}-W${String(weekNum).padStart(2,"0")}`;
 }
-function todayStr() { return new Date().toISOString().slice(0,10); }
+function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
 function thisWeekStr() { return getISOWeek(todayStr()); }
 
 // ── Leaderboard helpers ────────────────────────────────────────────────────
