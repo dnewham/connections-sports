@@ -177,6 +177,9 @@ function getDailyLeaderboard(games, players, dateStr) {
     }
   }
   return entries.sort((a,b) => {
+    if (a.finalSeconds == null && b.finalSeconds == null) return a.submittedAt - b.submittedAt;
+    if (a.finalSeconds == null) return 1;
+    if (b.finalSeconds == null) return -1;
     if (a.finalSeconds !== b.finalSeconds) return a.finalSeconds - b.finalSeconds;
     return a.submittedAt - b.submittedAt;
   });
