@@ -69,7 +69,12 @@ function parseShareText(text) {
     if (rowColors.length >= 2) gridRows.push(rowColors);
   }
   if (gridRows.length === 0) errors.push("Could not find emoji grid in share text");
-  return { rawTime, rawSeconds, puzzleNum, difficulty, gridRows, errors, dnf };
+  // Warnings are non-fatal issues we want to flag to dster
+  const warnings = [];
+  if (!puzzleNum) warnings.push("Could not detect puzzle number — result stored by date only");
+  if (!dnf && !timeMatch) warnings.push("Could not detect time");
+  if (gridRows.length === 0) warnings.push("Could not detect emoji grid");
+  return { rawTime, rawSeconds, puzzleNum, difficulty, gridRows, errors, warnings, dnf };
 }
 
 // ── Scoring engine ─────────────────────────────────────────────────────────
@@ -480,6 +485,8 @@ export default function App() {
       difficulty: parsed.difficulty,
       submittedAt: Date.now(),
       dnf: score.dnf || false,
+      rawInput: pasteText,
+      parseWarnings: parsed.warnings || [],
     };
     const today = new Date().toISOString().slice(0,10);
     const gameId = parsed.puzzleNum ? `puzzle-${parsed.puzzleNum}` : `date-${today}`;
@@ -791,6 +798,29 @@ export default function App() {
             </div>
           </Card>
         )}
+        {(() => {
+          if (activePlayer !== "dster") return null;
+          const today = todayStr();
+          const puzzleNum = getTodaysPuzzleNum(data.games, today);
+          const todayGames = puzzleNum
+            ? data.games.filter(g => g.puzzleNum && parseInt(g.puzzleNum) === puzzleNum)
+            : data.games.filter(g => g.date === today);
+          const warnings = [];
+          for (const game of todayGames) {
+            for (const entry of game.players) {
+              if (entry.parseWarnings && entry.parseWarnings.length > 0) {
+                entry.parseWarnings.forEach(w => warnings.push(`${entry.name}: ${w}`));
+              }
+            }
+          }
+          if (warnings.length === 0) return null;
+          return (
+            <div style={{ background:"#2a1a00", border:"1px solid #7a4400", borderRadius:10, padding:"10px 14px", marginBottom:16 }}>
+              <div style={{ fontSize:12, fontWeight:700, color:"#f0a500", marginBottom:6 }}>⚠ Parse Warnings</div>
+              {warnings.map((w, i) => <div key={i} style={{ fontSize:11, color:"#f0c060" }}>{w}</div>)}
+            </div>
+          );
+        })()}
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:20 }}>
           <Btn T={T} onClick={() => { setLogPlayer(activePlayer); setLogStep("paste"); setScreen("log"); }} style={{ gridColumn:"1/-1", padding:16, fontSize:16 }}>📋 Log a Result</Btn>
           <Btn T={T} variant="ghost" onClick={() => { setLbTab("daily"); setScreen("leaderboard"); }} style={{ padding:14 }}>🏆 Leaderboard</Btn>
