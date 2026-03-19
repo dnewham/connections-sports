@@ -488,16 +488,23 @@ export default function App() {
       rawInput: pasteText,
       parseWarnings: parsed.warnings || [],
     };
-    const today = new Date().toISOString().slice(0,10);
+    const today = todayStr();
     const gameId = parsed.puzzleNum ? `puzzle-${parsed.puzzleNum}` : `date-${today}`;
-    const games = [...data.games];
+    setSaving(true);
+    // Always fetch fresh data from Firestore before writing to avoid overwriting other players' results
+    const fresh = await loadData();
+    const games = [...fresh.games];
     const existingIdx = games.findIndex(g => g.id === gameId);
     if (existingIdx >= 0) {
       games[existingIdx] = { ...games[existingIdx], players: [...games[existingIdx].players.filter(p=>p.name!==logPlayer), entry] };
     } else {
       games.unshift({ id:gameId, date:today, puzzleNum:parsed.puzzleNum, difficulty:parsed.difficulty, players:[entry] });
     }
-    await persist({ ...data, games });
+    const next = { ...fresh, players: fresh.players.length ? fresh.players : data.players };
+    next.games = games;
+    await saveData(next);
+    setData(next);
+    setSaving(false);
     setLogStep("pick"); setLogPlayer(null); setPasteText(""); setParsed(null); setScore(null);
     setScreen("home");
   };
