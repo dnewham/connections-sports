@@ -521,8 +521,11 @@ export default function App() {
     // If the share text had no puzzle number, try to infer it from fresh data
     const inferredPuzzleNum = parsed.puzzleNum || String(getTodaysPuzzleNum(fresh.games, today) || "");
     const gameId = inferredPuzzleNum ? `puzzle-${inferredPuzzleNum}` : `date-${today}`;
-    // Backfill puzzleNum on the entry if we inferred it
-    if (!parsed.puzzleNum && inferredPuzzleNum) entry.puzzleNum = inferredPuzzleNum;
+    // Backfill puzzleNum on the entry if we inferred it, and clear the related warning
+    if (!parsed.puzzleNum && inferredPuzzleNum) {
+      entry.puzzleNum = inferredPuzzleNum;
+      entry.parseWarnings = entry.parseWarnings.filter(w => !w.includes("puzzle number"));
+    }
     const games = [...fresh.games];
     const existingIdx = games.findIndex(g => g.id === gameId);
     if (existingIdx >= 0) {
