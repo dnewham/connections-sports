@@ -294,7 +294,7 @@ function GridPreview({ gridRows }) {
   );
 }
 function ParsePreview({ parsed, score, T }) {
-  const { rawTime, puzzleNum, difficulty, gridRows } = parsed;
+  const { rawTime, puzzleNum, difficulty, gridRows, dnf } = parsed;
   const { adjustments, finalTime } = score;
   return (
     <div>
@@ -326,7 +326,7 @@ function ParsePreview({ parsed, score, T }) {
           ))}
         </div>
       ) : (
-        <div style={{ fontSize:12, color:T.muted, textAlign:"center" }}>No adjustments — clean base time!</div>
+        !dnf && <div style={{ fontSize:12, color:T.muted, textAlign:"center" }}>No adjustments — clean base time!</div>
       )}
     </div>
   );
@@ -515,14 +515,14 @@ export default function App() {
       parseWarnings: parsed.warnings || [],
     };
     const today = todayStr();
-    // If the share text had no puzzle number, try to infer it from existing data
+    setSaving(true);
+    // Always fetch fresh data from Firestore before writing to avoid overwriting other players' results
+    const fresh = await loadData();
+    // If the share text had no puzzle number, try to infer it from fresh data
     const inferredPuzzleNum = parsed.puzzleNum || String(getTodaysPuzzleNum(fresh.games, today) || "");
     const gameId = inferredPuzzleNum ? `puzzle-${inferredPuzzleNum}` : `date-${today}`;
     // Backfill puzzleNum on the entry if we inferred it
     if (!parsed.puzzleNum && inferredPuzzleNum) entry.puzzleNum = inferredPuzzleNum;
-    setSaving(true);
-    // Always fetch fresh data from Firestore before writing to avoid overwriting other players' results
-    const fresh = await loadData();
     const games = [...fresh.games];
     const existingIdx = games.findIndex(g => g.id === gameId);
     if (existingIdx >= 0) {
