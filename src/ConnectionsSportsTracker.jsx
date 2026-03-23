@@ -41,14 +41,12 @@ function saveThemeLocally(name, themeId) {
 function parseShareText(text) {
   const errors = [];
   const timeMatch = text.match(/(?:Time:\s*|in\s+)(\d{1,2}):(\d{2})/i);
-  const dnf = !timeMatch;
-  if (!timeMatch) errors.push("Could not find Time (expected format MM:SS)");
-  const rawSeconds = timeMatch ? parseInt(timeMatch[1]) * 60 + parseInt(timeMatch[2]) : null;
-  const rawTime = timeMatch ? `${timeMatch[1].padStart(2,"0")}:${timeMatch[2]}` : "DNF";
   const puzzleMatch = text.match(/puzzle\s*#?(\d+)/i);
   const puzzleNum = puzzleMatch ? puzzleMatch[1] : null;
   const diffMatch = text.match(/ranked\s+([a-z\s]+?)(?:\.|Average|\n|$)/i);
   const difficulty = diffMatch ? diffMatch[1].trim() : null;
+  // Detect explicit "4 mistakes" language — means DNF regardless of whether a time is present
+  const fourMistakesMatch = /\b4 mistakes\b/i.test(text);
 
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
   const gridRows = [];
@@ -69,6 +67,13 @@ function parseShareText(text) {
     if (rowColors.length >= 2) gridRows.push(rowColors);
   }
   if (gridRows.length === 0) errors.push("Could not find emoji grid in share text");
+
+  // DNF if: no time found, OR 4+ mixed-color rows, OR explicit "4 mistakes" in text
+  const mixedRows = gridRows.filter(r => !r.every(col => col === r[0])).length;
+  const dnf = !timeMatch || mixedRows >= 4 || fourMistakesMatch;
+  if (!timeMatch && mixedRows < 4 && !fourMistakesMatch) errors.push("Could not find Time (expected format MM:SS)");
+  const rawSeconds = (!dnf && timeMatch) ? parseInt(timeMatch[1]) * 60 + parseInt(timeMatch[2]) : null;
+  const rawTime = (!dnf && timeMatch) ? `${timeMatch[1].padStart(2,"0")}:${timeMatch[2]}` : "DNF";
   // Warnings are non-fatal issues we want to flag to dster
   const warnings = [];
   if (!puzzleNum) warnings.push("Could not detect puzzle number — result stored by date only");
@@ -161,10 +166,30 @@ function getLeaderboard(games, players) {
     });
 }
 
+function daysBetween(dateA, dateB) {
+  const a = new Date(dateA + "T12:00:00");
+  const b = new Date(dateB + "T12:00:00");
+  return Math.round((b - a) / 86400000);
+}
+
 function getTodaysPuzzleNum(games, dateStr) {
+  // First: check if any game today already has a puzzle number
   const todayGames = games.filter(g => g.date === dateStr && g.puzzleNum);
   if (todayGames.length > 0) {
     return Math.max(...todayGames.map(g => parseInt(g.puzzleNum)));
+  }
+  // Second: extrapolate from the most recent game that has both a date and puzzle number
+  const anchors = games
+    .filter(g => g.date && g.puzzleNum)
+    .map(g => ({ date: g.date, puzzleNum: parseInt(g.puzzleNum) }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  if (anchors.length > 0) {
+    const anchor = anchors[0];
+    const diff = daysBetween(anchor.date, dateStr);
+    // Only extrapolate up to 7 days out to avoid bad data compounding
+    if (diff >= 0 && diff <= 7) {
+      return anchor.puzzleNum + diff;
+    }
   }
   return null;
 }
@@ -490,7 +515,11 @@ export default function App() {
       parseWarnings: parsed.warnings || [],
     };
     const today = todayStr();
-    const gameId = parsed.puzzleNum ? `puzzle-${parsed.puzzleNum}` : `date-${today}`;
+    // If the share text had no puzzle number, try to infer it from existing data
+    const inferredPuzzleNum = parsed.puzzleNum || String(getTodaysPuzzleNum(fresh.games, today) || "");
+    const gameId = inferredPuzzleNum ? `puzzle-${inferredPuzzleNum}` : `date-${today}`;
+    // Backfill puzzleNum on the entry if we inferred it
+    if (!parsed.puzzleNum && inferredPuzzleNum) entry.puzzleNum = inferredPuzzleNum;
     setSaving(true);
     // Always fetch fresh data from Firestore before writing to avoid overwriting other players' results
     const fresh = await loadData();
