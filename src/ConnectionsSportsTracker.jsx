@@ -442,6 +442,7 @@ export default function App() {
   const [lbTab, setLbTab]           = useState("daily");
   const [editThemePlayer, setEditThemePlayer] = useState(null);
   const [copied, setCopied]         = useState(false);
+  const [copiedInput, setCopiedInput] = useState(null); // stores "name-gameId" of the entry whose input was just copied
   const [activePlayer, setActivePlayer] = useState(getSavedActivePlayer);
 
   useEffect(() => { loadData().then(setData); }, []);
@@ -756,10 +757,24 @@ export default function App() {
                 return (a.finalSeconds||0)-(b.finalSeconds||0);
               }).map(entry=>(
                 <div key={entry.name} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"8px 0", borderTop:`1px solid ${T.border}` }}>
-                  <div>
+                  <div style={{ flex:1 }}>
                     <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                       <span style={{ width:10, height:10, borderRadius:"50%", background:THEMES[getSavedTheme(entry.name)].accent, display:"inline-block", flexShrink:0 }} />
                       <span style={{ fontWeight:700, fontSize:14 }}>{entry.name}</span>
+                      {entry.rawInput && (() => {
+                        const key = entry.name + "-" + game.id;
+                        const isCopied = copiedInput === key;
+                        return (
+                          <button onClick={() => {
+                            navigator.clipboard.writeText(entry.rawInput).then(() => {
+                              setCopiedInput(key);
+                              setTimeout(() => setCopiedInput(null), 2500);
+                            });
+                          }} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:5, color:isCopied ? "#6DBF6D" : T.muted, fontSize:10, cursor:"pointer", fontFamily:mono, padding:"2px 6px", letterSpacing:"0.04em" }}>
+                            {isCopied ? "✓ copied" : "copy input"}
+                          </button>
+                        );
+                      })()}
                     </div>
                     <div style={{ display:"flex", gap:3, marginTop:4 }}>
                       {entry.gridRows?.map((row,i)=>(
@@ -767,7 +782,7 @@ export default function App() {
                       ))}
                     </div>
                   </div>
-                  <div style={{ textAlign:"right" }}>
+                  <div style={{ textAlign:"right", marginLeft:12 }}>
                     <div style={{ fontFamily:display, fontWeight:800, fontSize:16, color:T.accent }}>{entry.finalTime}</div>
                     <div style={{ fontSize:10, color:T.muted }}>raw {entry.rawTime}</div>
                   </div>
