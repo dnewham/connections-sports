@@ -450,6 +450,78 @@ function shareTodayResults(games, players, dateStr, setCopied) {
   }).catch(() => alert("Could not copy — try again"));
 }
 
+// ── Weekly Recap Generator ────────────────────────────────────────────────
+async function generateRecap(games, players, weekStr) {
+  // Collect all games from the target week
+  const weekGames = games.filter(g => g.date && getISOWeek(g.date) === weekStr);
+  if (weekGames.length === 0) return null;
+
+  const names = playerNames(players);
+  const dates = [...new Set(weekGames.map(g => g.date))].sort();
+
+  // Build a structured summary of the week
+  const dailySummaries = dates.map(date => {
+    const ranked = getDailyLeaderboard(weekGames, names, date);
+    const puzzleNum = getTodaysPuzzleNum(weekGames, date);
+    const label = puzzleNum ? `Puzzle #${puzzleNum}` : date;
+    const results = ranked.map((p, i) => {
+      const game = weekGames.find(g => g.players.some(e => e.name === p.name));
+      const entry = game?.players.find(e => e.name === p.name);
+      const adjs = entry?.adjustments?.map(a => `${a.label} (${a.seconds > 0 ? "+" : ""}${a.seconds}s)`).join(", ") || "none";
+      return `  ${i+1}. ${p.name}: ${p.finalTime}${entry?.dnf ? " (DNF)" : ` (raw ${entry?.rawTime}, adjustments: ${adjs})`}`;
+    });
+    return `${label}:\n${results.join("\n")}`;
+  });
+
+  // Weekly standings
+  const weekly = getWeeklyLeaderboard(weekGames, names, weekStr);
+  const standings = weekly.filter(p => p.played > 0).map((p, i) =>
+    `  ${i+1}. ${p.name}: ${p.wins} daily win${p.wins !== 1 ? "s" : ""}, ${p.played} days played, ${fmt(p.cumSeconds)} cumulative time`
+  );
+
+  const prompt = `You are the announcer for a competitive friend group's weekly Connections: Sports Edition puzzle recap. The group plays NYT Connections Sports Edition daily and tracks their scores with custom rules.
+
+SCORING RULES (for context):
+- Base score = time to complete the puzzle
+- Each wrong guess = +5 seconds penalty
+- Solving purple first = -15 seconds bonus
+- Solving blue first = -5 seconds bonus  
+- Solving purple second = -10 seconds bonus
+- DNF = did not finish (used all 4 wrong guesses)
+- Lowest adjusted time wins each day
+
+PLAYERS: ${names.join(", ")}
+
+WEEK: ${weekStr}
+
+DAILY RESULTS:
+${dailySummaries.join("\n\n")}
+
+WEEKLY STANDINGS:
+${standings.join("\n")}
+
+Write a weekly recap in the style of a mix between ESPN SportsCenter, competitive trash talk, and friendly banter. It should:
+- Open with a punchy headline for the week
+- Recap each day's action with color commentary, calling out impressive times, brutal DNFs, close finishes, and any notable adjustments
+- Crown the weekly winner with appropriate fanfare
+- Call out the week's best single performance
+- End with some lighthearted trash talk or predictions for next week
+- Keep it fun, specific to the actual results, and around 250-350 words
+- Use the players' full names throughout`;
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1000,
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+  const data = await response.json();
+  return data.content?.[0]?.text || "Could not generate recap.";
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 export default function App() {
   const [data, setData]             = useState(null);
@@ -468,6 +540,10 @@ export default function App() {
   const [editThemePlayer, setEditThemePlayer] = useState(null);
   const [copied, setCopied]         = useState(false);
   const [copiedInput, setCopiedInput] = useState(null); // stores "name-gameId" of the entry whose input was just copied
+  const [recap, setRecap]             = useState(null);  // generated recap text
+  const [recapLoading, setRecapLoading] = useState(false);
+  const [recapWeek, setRecapWeek]     = useState(null);  // which week the recap is for
+  const [copiedRecap, setCopiedRecap] = useState(false);
   const [activePlayer, setActivePlayer] = useState(getSavedActivePlayer);
 
   useEffect(() => { loadData().then(setData); }, []);
@@ -887,7 +963,43 @@ export default function App() {
           </div>
           <button onClick={() => { setActivePlayer(null); saveActivePlayer(null); }} style={{ background:"none", border:"none", color:T.muted, fontSize:12, cursor:"pointer", fontFamily:mono, fontWeight:700, letterSpacing:"0.04em", textTransform:"uppercase" }}>Switch ↗</button>
         </div>
-        <Btn T={T} variant="ghost" onClick={() => shareTodayResults(data.games, names, todayStr(), setCopied)} style={{ width:"100%", marginBottom:14, padding:12, boxSizing:"border-box" }}>{copied ? "✓ Copied!" : "📤 Share Today's Results"}</Btn>
+        <Btn T={T} variant="ghost" onClick={() => shareTodayResults(data.games, names, todayStr(), setCopied)} style={{ width:"100%", marginBottom:10, padding:12, boxSizing:"border-box" }}>{copied ? "✓ Copied!" : "📤 Share Today's Results"}</Btn>
+        {(() => {
+          // Show recap button for last week if there's data
+          const lastWeek = getISOWeek((() => { const d = new Date(); d.setDate(d.getDate() - 7); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })());
+          const hasLastWeekData = data.games.some(g => g.date && getISOWeek(g.date) === lastWeek);
+          if (!hasLastWeekData) return null;
+          return (
+            <div style={{ marginBottom:14 }}>
+              <Btn T={T} variant="ghost" onClick={async () => {
+                if (recapLoading) return;
+                setRecapWeek(lastWeek);
+                setRecapLoading(true);
+                setRecap(null);
+                const text = await generateRecap(data.games, data.players, lastWeek);
+                setRecap(text);
+                setRecapLoading(false);
+              }} style={{ width:"100%", padding:12, boxSizing:"border-box" }}>
+                {recapLoading ? "✍️ Generating recap…" : "📰 Last Week's Recap"}
+              </Btn>
+              {recap && recapWeek === lastWeek && (
+                <Card T={T} style={{ marginTop:10 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+                    <div style={{ fontSize:11, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase" }}>Week of {recapWeek}</div>
+                    <button onClick={() => {
+                      navigator.clipboard.writeText(recap).then(() => {
+                        setCopiedRecap(true); setTimeout(() => setCopiedRecap(false), 2500);
+                      });
+                    }} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:5, color:copiedRecap ? "#6DBF6D" : T.muted, fontSize:10, cursor:"pointer", fontFamily:mono, padding:"3px 8px" }}>
+                      {copiedRecap ? "✓ copied" : "copy"}
+                    </button>
+                  </div>
+                  <div style={{ fontSize:13, color:T.text, lineHeight:1.7, whiteSpace:"pre-wrap" }}>{recap}</div>
+                </Card>
+              )}
+            </div>
+          );
+        })()}
         {names.length===0 && <div style={{ textAlign:"center", color:T.muted, fontSize:13, marginBottom:20 }}>Add your players below to get started.</div>}
         <div style={{ fontSize:11, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginBottom:10 }}>Players</div>
         <div style={{ display:"flex", gap:8, marginBottom:8 }}>
