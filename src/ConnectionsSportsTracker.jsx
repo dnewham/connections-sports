@@ -139,6 +139,15 @@ function getISOWeek(dateStr) {
 }
 function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
 function thisWeekStr() { return getISOWeek(todayStr()); }
+function lastWeekStr() {
+  // Find the Monday of the current week, then go back 1 day to land in last week
+  const d = new Date();
+  const day = d.getDay();
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - ((day + 6) % 7)); // rewind to this Monday
+  monday.setDate(monday.getDate() - 1);           // step back into last week (Sunday)
+  return getISOWeek(`${monday.getFullYear()}-${String(monday.getMonth()+1).padStart(2,"0")}-${String(monday.getDate()).padStart(2,"0")}`);
+}
 
 // ── Leaderboard helpers ────────────────────────────────────────────────────
 const fmt = s => s == null ? "—:—" : `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
@@ -509,15 +518,27 @@ Write a weekly recap in the style of a mix between ESPN SportsCenter, competitiv
 - Keep it fun, specific to the actual results, and around 250-350 words
 - Use the players' full names throughout`;
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+  let response;
+  try {
+    response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1000,
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        messages: [{ role: "user", content: prompt }],
+      }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API error ${response.status}`);
+  }
   const data = await response.json();
   return data.content?.[0]?.text || "Could not generate recap.";
 }
@@ -966,7 +987,7 @@ export default function App() {
         <Btn T={T} variant="ghost" onClick={() => shareTodayResults(data.games, names, todayStr(), setCopied)} style={{ width:"100%", marginBottom:10, padding:12, boxSizing:"border-box" }}>{copied ? "✓ Copied!" : "📤 Share Today's Results"}</Btn>
         {(() => {
           // Show recap button for last week if there's data
-          const lastWeek = getISOWeek((() => { const d = new Date(); d.setDate(d.getDate() - 7); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })());
+          const lastWeek = lastWeekStr();
           const hasLastWeekData = data.games.some(g => g.date && getISOWeek(g.date) === lastWeek);
           if (!hasLastWeekData) return null;
           return (
@@ -976,11 +997,16 @@ export default function App() {
                 setRecapWeek(lastWeek);
                 setRecapLoading(true);
                 setRecap(null);
-                const text = await generateRecap(data.games, data.players, lastWeek);
-                setRecap(text);
-                setRecapLoading(false);
+                try {
+                  const text = await generateRecap(data.games, data.players, lastWeek);
+                  setRecap(text);
+                } catch(e) {
+                  setRecap("⚠ Could not generate recap: " + (e.message || "unknown error"));
+                } finally {
+                  setRecapLoading(false);
+                }
               }} style={{ width:"100%", padding:12, boxSizing:"border-box" }}>
-                {recapLoading ? "✍️ Generating recap…" : "📰 Last Week's Recap"}
+                {recapLoading ? "✍️ Generating recap…" : recap && recapWeek === lastWeek ? "🔄 Regenerate Recap" : "📰 Last Week's Recap"}
               </Btn>
               {recap && recapWeek === lastWeek && (
                 <Card T={T} style={{ marginTop:10 }}>
