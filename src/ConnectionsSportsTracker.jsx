@@ -522,14 +522,10 @@ Write a weekly recap in the style of a mix between ESPN SportsCenter, competitiv
   const timeout = setTimeout(() => controller.abort(), 30000); // 30 second timeout
   let response;
   try {
-    response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1000,
-        messages: [{ role: "user", content: prompt }],
-      }),
+    response = await fetch("/api/recap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
       signal: controller.signal,
     });
   } finally {
@@ -537,10 +533,10 @@ Write a weekly recap in the style of a mix between ESPN SportsCenter, competitiv
   }
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error(err.error?.message || `API error ${response.status}`);
+    throw new Error(err.error || `API error ${response.status}`);
   }
   const data = await response.json();
-  return data.content?.[0]?.text || "Could not generate recap.";
+  return data.text || "Could not generate recap.";
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
