@@ -470,17 +470,23 @@ async function generateRecap(games, players, weekStr) {
 
   // Build a structured summary of the week
   const dailySummaries = dates.map(date => {
-    const ranked = getDailyLeaderboard(weekGames, names, date);
     const puzzleNum = getTodaysPuzzleNum(weekGames, date);
     const label = puzzleNum ? `Puzzle #${puzzleNum}` : date;
+    // Get only the games for this specific day/puzzle
+    const dayGames = puzzleNum
+      ? weekGames.filter(g => g.puzzleNum && parseInt(g.puzzleNum) === puzzleNum)
+      : weekGames.filter(g => g.date === date);
+    const ranked = getDailyLeaderboard(dayGames, names, date);
     const results = ranked.map((p, i) => {
-      const game = weekGames.find(g => g.players.some(e => e.name === p.name));
-      const entry = game?.players.find(e => e.name === p.name);
-      const adjs = entry?.adjustments?.map(a => `${a.label} (${a.seconds > 0 ? "+" : ""}${a.seconds}s)`).join(", ") || "none";
+      const entry = dayGames.flatMap(g => g.players).find(e => e.name === p.name);
+      const adjs = entry?.adjustments?.length
+        ? entry.adjustments.map(a => `${a.label} (${a.seconds > 0 ? "+" : ""}${a.seconds}s)`).join(", ")
+        : "none";
       return `  ${i+1}. ${p.name}: ${p.finalTime}${entry?.dnf ? " (DNF)" : ` (raw ${entry?.rawTime}, adjustments: ${adjs})`}`;
     });
+    if (results.length === 0) return null;
     return `${label}:\n${results.join("\n")}`;
-  });
+  }).filter(Boolean);
 
   // Weekly standings
   const weekly = getWeeklyLeaderboard(weekGames, names, weekStr);
