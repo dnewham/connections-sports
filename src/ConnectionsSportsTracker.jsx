@@ -139,6 +139,21 @@ function getISOWeek(dateStr) {
 }
 function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
 function thisWeekStr() { return getISOWeek(todayStr()); }
+function weekDateRange(weekStr) {
+  // Given a week string like "2026-W12", return "Mar 16 - Mar 22, 2026"
+  const [year, weekNum] = weekStr.split("-W").map(Number);
+  // Find the Monday of that week
+  const jan1 = new Date(year, 0, 1);
+  const daysToFirstMonday = (8 - jan1.getDay()) % 7;
+  const firstMonday = new Date(year, 0, 1 + daysToFirstMonday);
+  const monday = new Date(firstMonday);
+  monday.setDate(firstMonday.getDate() + (weekNum - 1) * 7);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const fmt = d => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return `${fmt(monday)} - ${fmt(sunday)}, ${year}`;
+}
+
 function lastWeekStr() {
   // Find the Monday of the current week, then go back 1 day to land in last week
   const d = new Date();
@@ -494,6 +509,7 @@ async function generateRecap(games, players, weekStr) {
     `  ${i+1}. ${p.name}: ${p.wins} daily win${p.wins !== 1 ? "s" : ""}, ${p.played} days played, ${fmt(p.cumSeconds)} cumulative time`
   );
 
+  const dateRange = weekDateRange(weekStr);
   const prompt = `You are the announcer for a competitive friend group's weekly Connections: Sports Edition puzzle recap. The group plays NYT Connections Sports Edition daily and tracks their scores with custom rules.
 
 SCORING RULES (for context):
@@ -507,7 +523,7 @@ SCORING RULES (for context):
 
 PLAYERS: ${names.join(", ")}
 
-WEEK: ${weekStr}
+WEEK: ${weekStr} (${dateRange})
 
 DAILY RESULTS:
 ${dailySummaries.join("\n\n")}
@@ -516,7 +532,7 @@ WEEKLY STANDINGS:
 ${standings.join("\n")}
 
 Write a weekly recap in the style of a mix between ESPN SportsCenter, competitive trash talk, and friendly banter. It should:
-- Open with a punchy headline for the week
+- Open with a punchy headline for the week — the headline must include the week date range in parentheses immediately after the week number, e.g. "WEEK 12 RECAP (Mar 16 - Mar 22, 2026): YOUR PUNCHY TITLE HERE"
 - Recap each day's action with color commentary, calling out impressive times, brutal DNFs, close finishes, and any notable adjustments
 - Crown the weekly winner with appropriate fanfare
 - Call out the week's best single performance
@@ -842,7 +858,7 @@ export default function App() {
               <Card key={game.id} T={DT} style={{ marginBottom:8 }}>
                 <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                   <div>
-                    <div style={{ fontSize:12, color:DT.muted }}>{game.puzzleNum?`Puzzle #${game.puzzleNum}`:game.date}{game.difficulty&&` · ${game.difficulty}`}</div>
+                    <div style={{ fontSize:12, color:DT.muted }}>{game.puzzleNum?`Puzzle #${game.puzzleNum}${game.date ? " · " + game.date : ""}`:game.date}{game.difficulty&&` · ${game.difficulty}`}</div>
                     <div style={{ display:"flex", gap:3, marginTop:6 }}>
                       {entry.gridRows?.map((row,i)=>(
                         <div key={i} style={{ display:"flex", gap:2 }}>{row.map((c,j)=><ColorDot key={j} color={c} size={10}/>)}</div>
@@ -879,7 +895,7 @@ export default function App() {
           {data.games.map(game=>(
             <Card key={game.id} T={T} style={{ marginBottom:12 }}>
               <div style={{ fontSize:12, color:T.muted, marginBottom:10, display:"flex", justifyContent:"space-between" }}>
-                <span>{game.puzzleNum?`Puzzle #${game.puzzleNum}`:game.date}</span>
+                <span>{game.puzzleNum?`Puzzle #${game.puzzleNum}${game.date ? " · " + game.date : ""}`:game.date}</span>
                 {game.difficulty&&<span style={{ textTransform:"capitalize" }}>{game.difficulty}</span>}
               </div>
               {[...game.players].sort((a,b) => {
