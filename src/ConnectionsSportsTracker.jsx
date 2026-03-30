@@ -139,19 +139,19 @@ function getISOWeek(dateStr) {
 }
 function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
 function thisWeekStr() { return getISOWeek(todayStr()); }
-function weekDateRange(weekStr) {
-  // Given a week string like "2026-W12", return "Mar 16 - Mar 22, 2026"
-  const [year, weekNum] = weekStr.split("-W").map(Number);
-  // Find the Monday of that week
-  const jan1 = new Date(year, 0, 1);
-  const daysToFirstMonday = (8 - jan1.getDay()) % 7;
-  const firstMonday = new Date(year, 0, 1 + daysToFirstMonday);
-  const monday = new Date(firstMonday);
-  monday.setDate(firstMonday.getDate() + (weekNum - 1) * 7);
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-  const fmt = d => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  return `${fmt(monday)} - ${fmt(sunday)}, ${year}`;
+function weekDateRange(weekStr, games) {
+  // Derive the date range from actual game dates in this week
+  const dates = games
+    .filter(g => g.date && getISOWeek(g.date) === weekStr)
+    .map(g => g.date)
+    .sort();
+  if (dates.length === 0) return weekStr;
+  const fmt = dateStr => {
+    const d = new Date(dateStr + "T12:00:00");
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  };
+  const year = dates[0].slice(0, 4);
+  return `${fmt(dates[0])} - ${fmt(dates[dates.length - 1])}, ${year}`;
 }
 
 function lastWeekStr() {
@@ -509,7 +509,7 @@ async function generateRecap(games, players, weekStr) {
     `  ${i+1}. ${p.name}: ${p.wins} daily win${p.wins !== 1 ? "s" : ""}, ${p.played} days played, ${fmt(p.cumSeconds)} cumulative time`
   );
 
-  const dateRange = weekDateRange(weekStr);
+  const dateRange = weekDateRange(weekStr, games);
   const prompt = `You are the announcer for a competitive friend group's weekly Connections: Sports Edition puzzle recap. The group plays NYT Connections Sports Edition daily and tracks their scores with custom rules.
 
 SCORING RULES (for context):
