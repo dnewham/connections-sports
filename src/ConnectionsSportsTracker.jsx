@@ -221,13 +221,13 @@ function getTodaysPuzzleNum(games, dateStr) {
 function getDailyLeaderboard(games, players, dateStr) {
   const puzzleNum = getTodaysPuzzleNum(games, dateStr);
   const dayGames = puzzleNum
-    ? games.filter(g => g.puzzleNum && parseInt(g.puzzleNum) === puzzleNum)
+    ? games.filter(g => (g.puzzleNum && parseInt(g.puzzleNum) === puzzleNum) || (!g.puzzleNum && g.date === dateStr))
     : games.filter(g => g.date === dateStr);
   const entries = [];
   for (const name of playerNames(players)) {
     for (const game of dayGames) {
       const p = game.players.find(e => e.name === name);
-      if (p) entries.push({ name, finalSeconds: p.finalSeconds, submittedAt: p.submittedAt || 0, finalTime: p.finalTime });
+      if (p) entries.push({ name, finalSeconds: p.finalSeconds, submittedAt: p.submittedAt || 0, finalTime: p.finalTime, dnf: p.dnf || false });
     }
   }
   return entries.sort((a,b) => {
@@ -435,7 +435,7 @@ function ThemePicker({ value, onChange, T }) {
 function shareTodayResults(games, players, dateStr, setCopied) {
   const puzzleNum = getTodaysPuzzleNum(games, dateStr);
   const dayGames = puzzleNum
-    ? games.filter(g => g.puzzleNum && parseInt(g.puzzleNum) === puzzleNum)
+    ? games.filter(g => (g.puzzleNum && parseInt(g.puzzleNum) === puzzleNum) || (!g.puzzleNum && g.date === dateStr))
     : games.filter(g => g.date === dateStr);
   if (dayGames.length === 0) { alert("No results logged today yet!"); return; }
   const entries = [];
