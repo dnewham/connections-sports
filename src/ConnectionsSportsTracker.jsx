@@ -244,17 +244,27 @@ function getWeeklyLeaderboard(games, players, weekStr) {
   const dates = [...new Set(weekGames.map(g => g.date))].sort();
   const names = playerNames(players);
   const stats = {};
-  for (const name of names) stats[name] = { name, wins: 0, cumSeconds: 0, played: 0 };
+  for (const name of names) stats[name] = { name, wins: 0, finishes: 0, cumSeconds: 0, played: 0 };
   for (const date of dates) {
     const ranked = getDailyLeaderboard(weekGames, names, date);
     if (ranked.length === 0) continue;
     const winner = ranked[0];
-    if (stats[winner.name]) stats[winner.name].wins++;
+    if (stats[winner.name] && !winner.dnf) stats[winner.name].wins++;
     for (const entry of ranked) {
-      if (stats[entry.name]) { stats[entry.name].cumSeconds += entry.finalSeconds; stats[entry.name].played++; }
+      if (stats[entry.name]) {
+        stats[entry.name].played++;
+        if (!entry.dnf) {
+          stats[entry.name].finishes++;
+          stats[entry.name].cumSeconds += entry.finalSeconds;
+        }
+      }
     }
   }
-  return Object.values(stats).sort((a,b) => b.wins !== a.wins ? b.wins - a.wins : a.cumSeconds - b.cumSeconds);
+  return Object.values(stats).sort((a,b) => {
+    if (b.wins !== a.wins) return b.wins - a.wins;               // 1. most daily wins
+    if (b.finishes !== a.finishes) return b.finishes - a.finishes; // 2. most daily finishes
+    return a.cumSeconds - b.cumSeconds;                           // 3. lowest cumulative time
+  });
 }
 
 function getAllTimeDailyWins(games, players) {
@@ -823,7 +833,11 @@ export default function App() {
                   </div>
                 </Card>
               ))}
-              {weeklyRanked.some(p=>p.played>0) && <div style={{ fontSize:11, color:T.muted, textAlign:"center", marginTop:8 }}>Tiebreak: lowest cumulative time</div>}
+              {weeklyRanked.some(p=>p.played>0) && (
+              <div style={{ fontSize:11, color:T.muted, textAlign:"center", marginTop:8 }}>
+                Ranked by: most wins · most finishes · lowest cumulative time
+              </div>
+            )}
             </div>
           )}
           {lbTab==="alltime" && (
