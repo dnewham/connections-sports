@@ -579,6 +579,8 @@ export default function App() {
   const [editThemePlayer, setEditThemePlayer] = useState(null);
   const [copied, setCopied]         = useState(false);
   const [copiedInput, setCopiedInput] = useState(null); // stores "name-gameId" of the entry whose input was just copied
+  const [renamingPlayer, setRenamingPlayer] = useState(null); // name currently being renamed
+  const [renameValue, setRenameValue]   = useState("");
   const [recap, setRecap]             = useState(null);  // generated recap text
   const [recapLoading, setRecapLoading] = useState(false);
   const [recapWeek, setRecapWeek]     = useState(null);  // which week the recap is for
@@ -604,6 +606,36 @@ export default function App() {
   const removePlayer = name => {
     if (!window.confirm(`Remove ${name}? Their game history will be kept.`)) return;
     persist({ ...data, players: data.players.filter(p => (typeof p==="string"?p:p.name) !== name) });
+  };
+  const renamePlayer = async (oldName, newName) => {
+    newName = newName.trim();
+    if (!newName || newName === oldName) { setRenamingPlayer(null); return; }
+    if (playerNames(data.players).includes(newName)) {
+      alert(`"${newName}" is already taken — choose a different name.`); return;
+    }
+    setSaving(true);
+    const fresh = await loadData();
+    // Update players array
+    const players = fresh.players.map(p => {
+      const n = typeof p === "string" ? p : p.name;
+      return n === oldName ? newName : p;
+    });
+    // Update every game entry that references the old name
+    const games = fresh.games.map(game => ({
+      ...game,
+      players: game.players.map(e => e.name === oldName ? { ...e, name: newName } : e),
+    }));
+    // Migrate localStorage theme
+    const theme = getSavedTheme(oldName);
+    saveThemeLocally(newName, theme);
+    // If this was the active player, update that too
+    if (activePlayer === oldName) { setActivePlayer(newName); saveActivePlayer(newName); }
+    const next = { ...fresh, players, games };
+    await saveData(next);
+    setData(next);
+    setSaving(false);
+    setRenamingPlayer(null);
+    setRenameValue("");
   };
   const handleParse = () => {
     const p = parseShareText(pasteText);
@@ -1061,9 +1093,20 @@ export default function App() {
             <div key={name} style={{ display:"flex", flexDirection:"column", gap:6 }}>
               <div style={{ display:"flex", alignItems:"center", gap:6, background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, padding:"6px 10px" }}>
                 <span style={{ width:10, height:10, borderRadius:"50%", background:THEMES[getSavedTheme(name)].accent, display:"inline-block", flexShrink:0 }} />
-                <span onClick={()=>setEditThemePlayer(editThemePlayer===name?null:name)} style={{ fontSize:13, fontWeight:600, cursor:"pointer", textDecoration:"underline dotted", textUnderlineOffset:3 }}>{name}</span>
+                <span onClick={()=>{ setEditThemePlayer(editThemePlayer===name?null:name); setRenamingPlayer(null); }} style={{ fontSize:13, fontWeight:600, cursor:"pointer", textDecoration:"underline dotted", textUnderlineOffset:3 }}>{name}</span>
+                <button onClick={()=>{ setRenamingPlayer(renamingPlayer===name?null:name); setRenameValue(name); setEditThemePlayer(null); }} style={{ background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:11, fontFamily:mono, padding:"0 2px", letterSpacing:"0.03em" }} title="Rename">✏️</button>
                 <button onClick={()=>removePlayer(name)} style={{ background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:14, lineHeight:1, padding:"0 2px" }}>×</button>
               </div>
+              {renamingPlayer===name && (
+                <div style={{ display:"flex", gap:6, marginTop:2 }}>
+                  <input value={renameValue} onChange={e=>setRenameValue(e.target.value)}
+                    onKeyDown={e=>{ if(e.key==="Enter") renamePlayer(name, renameValue); if(e.key==="Escape") setRenamingPlayer(null); }}
+                    style={{ flex:1, background:T.surface, border:`1px solid ${T.accent}`, borderRadius:6, color:T.text, padding:"6px 10px", fontFamily:mono, fontSize:13, outline:"none" }}
+                    autoFocus />
+                  <button onClick={()=>renamePlayer(name, renameValue)} style={{ background:T.accent, border:"none", borderRadius:6, color:"#111", fontFamily:mono, fontWeight:700, fontSize:12, padding:"6px 10px", cursor:"pointer" }}>Save</button>
+                  <button onClick={()=>setRenamingPlayer(null)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:6, color:T.muted, fontFamily:mono, fontSize:12, padding:"6px 10px", cursor:"pointer" }}>Cancel</button>
+                </div>
+              )}
               {editThemePlayer===name && (
                 <Card T={T} style={{ marginBottom:4 }}>
                   <ThemePicker value={getSavedTheme(name)} onChange={themeId => { saveThemeLocally(name, themeId); setEditThemePlayer(null); }} T={T} />
