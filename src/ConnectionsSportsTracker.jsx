@@ -824,7 +824,7 @@ export default function App() {
                         <span style={{ width:10, height:10, borderRadius:"50%", background:THEMES[getSavedTheme(p.name)].accent, display:"inline-block", flexShrink:0 }} />
                         <span style={{ fontWeight:700, fontSize:15 }}>{p.name}</span>
                       </div>
-                      <div style={{ fontSize:11, color:T.muted, marginTop:3 }}>{p.played} day{p.played!==1?"s":""} played · {fmt(p.cumSeconds)} cumulative</div>
+                      <div style={{ fontSize:11, color:T.muted, marginTop:3 }}>{p.played} day{p.played!==1?"s":""} played · {p.finishes} finish{p.finishes!==1?"es":""} · {fmt(p.cumSeconds)} cumulative</div>
                     </div>
                     <div style={{ textAlign:"right" }}>
                       <div style={{ fontFamily:display, fontWeight:800, fontSize:24, color:T.accent }}>{p.wins}</div>
