@@ -516,7 +516,7 @@ async function generateRecap(games, players, weekStr) {
   // Weekly standings
   const weekly = getWeeklyLeaderboard(weekGames, names, weekStr);
   const standings = weekly.filter(p => p.played > 0).map((p, i) =>
-    `  ${i+1}. ${p.name}: ${p.wins} daily win${p.wins !== 1 ? "s" : ""}, ${p.played} days played, ${fmt(p.cumSeconds)} cumulative time`
+    `  ${i+1}. ${p.name}: ${p.wins} daily win${p.wins !== 1 ? "s" : ""}, ${p.finishes} finish${p.finishes !== 1 ? "es" : ""}, ${p.played} days played, ${fmt(p.cumSeconds)} cumulative time`
   );
 
   const dateRange = weekDateRange(weekStr, games);
@@ -530,6 +530,7 @@ SCORING RULES (for context):
 - Solving purple second = -10 seconds bonus
 - DNF = did not finish (used all 4 wrong guesses)
 - Lowest adjusted time wins each day
+- Weekly ranking: 1st most daily wins, 2nd most daily finishes (DNF days excluded), 3rd lowest cumulative adjusted time
 
 PLAYERS: ${names.join(", ")}
 
