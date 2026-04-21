@@ -279,6 +279,24 @@ function getAllTimeDailyWins(games, players) {
   return names.map(name => ({ name, wins: wins[name] })).sort((a,b) => b.wins - a.wins);
 }
 
+function getAllTimeDNFs(games, players) {
+  // Seed with known historical DNFs that predate rawInput tracking
+  const historical = { "dster": 2, "Rynomite": 2, "Liudacris": 7, "Show-me Willy": 5 };
+  const names = playerNames(players);
+  const dnfs = {};
+  for (const name of names) dnfs[name] = historical[name] || 0;
+  // Add any DNFs recorded in Firestore (avoid double-counting historical ones
+  // by only counting entries that have rawInput, meaning they were submitted after tracking began)
+  for (const game of games) {
+    for (const entry of game.players) {
+      if (entry.dnf && entry.rawInput && dnfs[entry.name] != null) {
+        dnfs[entry.name]++;
+      }
+    }
+  }
+  return names.map(name => ({ name, wins: dnfs[name] })).sort((a,b) => b.wins - a.wins);
+}
+
 function getAllTimeWeeklyWins(games, players) {
   const names = playerNames(players);
   const wins = {};
@@ -868,8 +886,11 @@ export default function App() {
               <Card T={T} style={{ marginBottom:12 }}>
                 <WinsBarChart data={getAllTimeDailyWins(data.games, names)} label="All-Time Daily Wins" T={T} />
               </Card>
-              <Card T={T}>
+              <Card T={T} style={{ marginBottom:12 }}>
                 <WinsBarChart data={getAllTimeWeeklyWins(data.games, names)} label="All-Time Weekly Wins" T={T} />
+              </Card>
+              <Card T={T}>
+                <WinsBarChart data={getAllTimeDNFs(data.games, names)} label="Dementia 'n Focus (All-Time DNFs)" T={T} />
               </Card>
             </div>
           )}
