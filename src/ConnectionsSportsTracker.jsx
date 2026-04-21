@@ -280,19 +280,28 @@ function getAllTimeDailyWins(games, players) {
 }
 
 function getAllTimeDNFs(games, players) {
-  // Seed with known historical DNFs that predate rawInput tracking
-  const historical = { "dster": 2, "Rynomite": 2, "Liudacris": 7, "Show-me Willy": 5 };
+  // Seed with known DNF totals as of when tracking was set up.
+  // These represent DNFs that occurred before the current Firestore data,
+  // i.e. results that were re-submitted and may no longer appear as DNF in history.
+  const seedCounts = { "dster": 2, "Rynomite": 2, "Liudacris": 7, "Show-me Willy": 5 };
   const names = playerNames(players);
-  const dnfs = {};
-  for (const name of names) dnfs[name] = historical[name] || 0;
-  // Add any DNFs recorded in Firestore (avoid double-counting historical ones
-  // by only counting entries that have rawInput, meaning they were submitted after tracking began)
+  // Count all DNFs currently in Firestore
+  const firestoreDNFs = {};
+  for (const name of names) firestoreDNFs[name] = 0;
   for (const game of games) {
     for (const entry of game.players) {
-      if (entry.dnf && entry.rawInput && dnfs[entry.name] != null) {
-        dnfs[entry.name]++;
+      if (entry.dnf && firestoreDNFs[entry.name] != null) {
+        firestoreDNFs[entry.name]++;
       }
     }
+  }
+  // Use whichever is higher — the seed or the Firestore count —
+  // then add any new DNFs beyond the seed
+  const dnfs = {};
+  for (const name of names) {
+    const seed = seedCounts[name] || 0;
+    const current = firestoreDNFs[name] || 0;
+    dnfs[name] = Math.max(seed, current);
   }
   return names.map(name => ({ name, wins: dnfs[name] })).sort((a,b) => b.wins - a.wins);
 }
