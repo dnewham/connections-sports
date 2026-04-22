@@ -279,6 +279,29 @@ function getAllTimeDailyWins(games, players) {
   return names.map(name => ({ name, wins: wins[name] })).sort((a,b) => b.wins - a.wins);
 }
 
+function getAllTimeStreaks(games, players) {
+  const historical = { "dster": 11, "Rynomite": 26, "Liudacris": 14, "Wily Mays Haze": 11 };
+  const names = playerNames(players);
+  const keyToDate = {};
+  games.forEach(g => { keyToDate[g.puzzleNum ? `puzzle-${g.puzzleNum}` : `date-${g.date}`] = g.date; });
+  const allKeys = Object.keys(keyToDate);
+  allKeys.sort((a, b) => (keyToDate[a] || "").localeCompare(keyToDate[b] || ""));
+  const streaks = {};
+  const maxStreaks = {};
+  for (const name of names) { streaks[name] = 0; maxStreaks[name] = historical[name] || 0; }
+  for (const key of allKeys) {
+    const game = games.find(g => (g.puzzleNum ? `puzzle-${g.puzzleNum}` : `date-${g.date}`) === key);
+    if (!game) continue;
+    for (const name of names) {
+      const entry = game.players.find(p => p.name === name);
+      if (!entry) { streaks[name] = 0; }
+      else if (entry.dnf) { streaks[name] = 0; }
+      else { streaks[name]++; if (streaks[name] > maxStreaks[name]) maxStreaks[name] = streaks[name]; }
+    }
+  }
+  return names.map(name => ({ name, wins: maxStreaks[name] })).sort((a,b) => b.wins - a.wins);
+}
+
 function getAllTimeDNFs(games, players) {
   // Seed with known DNF totals as of when tracking was set up.
   // These represent DNFs that occurred before the current Firestore data,
@@ -547,6 +570,39 @@ async function generateRecap(games, players, weekStr) {
   );
 
   const dateRange = weekDateRange(weekStr, games);
+
+  // Build streak context — track each player's streak going into and out of this week
+  const allDates = [...new Set(games.map(g => g.date).filter(Boolean))].sort();
+  const weekDates = dates; // already computed above
+  const firstWeekDate = weekDates[0];
+  const lastWeekDate = weekDates[weekDates.length - 1];
+  // Calculate streak state per player at start and end of week
+  const streakContext = [];
+  for (const name of names) {
+    let streak = 0;
+    let streakAtStart = null;
+    let streakAtEnd = null;
+    for (const key of [...new Set(games.map(g => g.puzzleNum ? `puzzle-${g.puzzleNum}` : `date-${g.date}`))].sort((a,b) => {
+      const da = games.find(g => (g.puzzleNum ? `puzzle-${g.puzzleNum}` : `date-${g.date}`) === a)?.date || "";
+      const db = games.find(g => (g.puzzleNum ? `puzzle-${g.puzzleNum}` : `date-${g.date}`) === b)?.date || "";
+      return da.localeCompare(db);
+    })) {
+      const game = games.find(g => (g.puzzleNum ? `puzzle-${g.puzzleNum}` : `date-${g.date}`) === key);
+      if (!game) continue;
+      if (game.date === firstWeekDate) streakAtStart = streak;
+      const entry = game.players.find(p => p.name === name);
+      if (!entry) streak = 0;
+      else if (entry.dnf) streak = 0;
+      else streak++;
+      if (game.date === lastWeekDate) streakAtEnd = streak;
+    }
+    if (streakAtStart !== null && streakAtEnd !== null) {
+      if (streakAtEnd === 0) streakContext.push(`${name}: streak BROKEN this week (had ${streakAtStart} entering the week)`);
+      else if (streakAtStart === 0) streakContext.push(`${name}: started a new streak, currently at ${streakAtEnd}`);
+      else streakContext.push(`${name}: extended streak from ${streakAtStart} to ${streakAtEnd} consecutive finishes`);
+    }
+  }
+
   const prompt = `You are the announcer for a competitive friend group's weekly Connections: Sports Edition puzzle recap. The group plays NYT Connections Sports Edition daily and tracks their scores with custom rules.
 
 SCORING RULES (for context):
@@ -569,11 +625,15 @@ ${dailySummaries.join("\n\n")}
 WEEKLY STANDINGS:
 ${standings.join("\n")}
 
+STREAK NOTES:
+${streakContext.length > 0 ? streakContext.join("\n") : "No notable streak changes this week"}
+
 Write a weekly recap in the style of a mix between ESPN SportsCenter, competitive trash talk, and friendly banter. It should:
 - Open with a punchy headline for the week — the headline must include the week date range in parentheses immediately after the week number, e.g. "WEEK 12 RECAP (Mar 16 - Mar 22, 2026): YOUR PUNCHY TITLE HERE"
 - Recap each day's action with color commentary, calling out impressive times, brutal DNFs, close finishes, and any notable adjustments
 - Crown the weekly winner with appropriate fanfare
 - Call out the week's best single performance
+- Call out any streaks that were broken or extended during the week — this is significant news
 - End with some lighthearted trash talk or predictions for next week
 - Keep it fun, specific to the actual results, and around 250-350 words
 - Use the players' full names throughout`;
@@ -897,6 +957,9 @@ export default function App() {
               </Card>
               <Card T={T} style={{ marginBottom:12 }}>
                 <WinsBarChart data={getAllTimeWeeklyWins(data.games, names)} label="All-Time Weekly Wins" T={T} />
+              </Card>
+              <Card T={T} style={{ marginBottom:12 }}>
+                <WinsBarChart data={getAllTimeStreaks(data.games, names)} label="Most Consecutive Finishes (All-Time)" T={T} />
               </Card>
               <Card T={T}>
                 <WinsBarChart data={getAllTimeDNFs(data.games, names)} label="Dementia 'n Focus (All-Time DNFs)" T={T} />
