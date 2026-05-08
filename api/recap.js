@@ -3,7 +3,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { prompt, puzzles, extractCategories, imageData } = req.body;
+  const { prompt, puzzles, extractCategories, imageData, imageType } = req.body;
 
   const apiHeaders = {
     "Content-Type": "application/json",
@@ -14,6 +14,9 @@ export default async function handler(req, res) {
   try {
     // ── MODE 1: Extract categories from a screenshot image ────────────────
     if (extractCategories && imageData) {
+      // Use the media type passed from the client, defaulting to png (iPhone screenshots)
+      const mediaType = imageType || "image/png";
+
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: apiHeaders,
@@ -25,7 +28,7 @@ export default async function handler(req, res) {
             content: [
               {
                 type: "image",
-                source: { type: "base64", media_type: "image/jpeg", data: imageData },
+                source: { type: "base64", media_type: mediaType, data: imageData },
               },
               {
                 type: "text",
@@ -58,16 +61,13 @@ If a category is not visible, use null for its value.`,
       return res.status(400).json({ error: "Missing prompt" });
     }
 
-    // Inject any stored category data passed from the client
-    const fullPrompt = prompt;
-
     const recapResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: apiHeaders,
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
         max_tokens: 2000,
-        messages: [{ role: "user", content: fullPrompt }],
+        messages: [{ role: "user", content: prompt }],
       }),
     });
 

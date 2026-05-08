@@ -535,13 +535,14 @@ function shareTodayResults(games, players, dateStr, setCopied) {
 }
 
 // ── Category Extractor ────────────────────────────────────────────────────
-async function extractCategoriesFromImage(base64Image) {
+async function extractCategoriesFromImage(base64Image, imageType) {
   const response = await fetch("/api/recap", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       extractCategories: true,
       imageData: base64Image,
+      imageType: imageType || "image/png",
     }),
   });
   if (!response.ok) {
@@ -905,18 +906,22 @@ export default function App() {
             const file = e.target.files[0];
             if (!file) return;
             const reader = new FileReader();
-            reader.onload = ev => setCatImage(ev.target.result.split(",")[1]);
+            reader.onload = ev => {
+              const [header, data] = ev.target.result.split(",");
+              const mime = header.match(/data:([^;]+)/)?.[1] || "image/png";
+              setCatImage({ data, mime });
+            };
             reader.readAsDataURL(file);
           }} />
           {catImage
-            ? <div style={{ color:T.accent, fontSize:13, fontWeight:700 }}>✓ Image selected — ready to extract</div>
+            ? <div style={{ color:T.accent, fontSize:13, fontWeight:700 }}>✓ Image selected ({catImage?.mime || ""}) — ready to extract</div>
             : <div style={{ color:T.muted, fontSize:13 }}>📷 Tap to select screenshot</div>}
         </label>
         {catError && <div style={{ marginTop:10, fontSize:12, color:"#e07070" }}>⚠ {catError}</div>}
-        <Btn T={T} disabled={!catImage || !catPuzzleNum.trim() || catLoading} onClick={async () => {
+        <Btn T={T} disabled={!catImage?.data || !catPuzzleNum.trim() || catLoading} onClick={async () => {
           setCatLoading(true); setCatError("");
           try {
-            const cats = await extractCategoriesFromImage(catImage);
+            const cats = await extractCategoriesFromImage(catImage.data, catImage.mime);
             if (!cats || !cats.yellow) { setCatError("Could not extract categories — try a clearer screenshot"); setCatLoading(false); return; }
             // Find the game in Firestore and update it
             const fresh = await loadData();
