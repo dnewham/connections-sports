@@ -670,7 +670,9 @@ Write a weekly recap in the style of a mix between ESPN SportsCenter, competitiv
     // Build list of puzzles for category lookup
     const puzzleList = dates.map(date => {
       const pNum = getTodaysPuzzleNum(weekGames, date);
-      return pNum ? { num: pNum, date } : null;
+      if (!pNum) return null;
+      const hasCategories = weekGames.some(g => g.puzzleNum && parseInt(g.puzzleNum) === pNum && g.categories);
+      return { num: pNum, date, hasCategories };
     }).filter(Boolean);
     response = await fetch("/api/recap", {
       method: "POST",
@@ -952,6 +954,16 @@ export default function App() {
         }} style={{ width:"100%", marginTop:16 }}>
           {catLoading ? "Extracting…" : "Extract & Save Categories"}
         </Btn>
+        <Btn T={T} variant="ghost" disabled={!catPuzzleNum.trim()} onClick={async () => {
+          setCatLoading(true); setCatError("");
+          try {
+            const res = await fetch("/api/recap", { method:"POST", headers:{"Content-Type":"application/json"},
+              body: JSON.stringify({ testCnet: { puzzleNum: catPuzzleNum.trim(), date: todayStr() } }) });
+            const d = await res.json();
+            setCatError(`CNET test: status=${d.status} len=${d.htmlLength} cats=${JSON.stringify(d.categories)} err=${d.error||""}`);
+          } catch(e) { setCatError("Test failed: " + e.message); }
+          setCatLoading(false);
+        }} style={{ width:"100%", marginTop:8, fontSize:11 }}>🔧 Test CNET Fetch</Btn>
         {/* Preview extracted categories if already stored for this puzzle */}
         {(() => {
           const existing = data.games.find(g => g.puzzleNum === catPuzzleNum.trim())?.categories;
@@ -1152,8 +1164,13 @@ export default function App() {
                 <span>{game.puzzleNum?`Puzzle #${game.puzzleNum}${game.date ? " · " + game.date : ""}`:game.date}</span>
                 <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                   {game.difficulty&&<span style={{ textTransform:"capitalize" }}>{game.difficulty}</span>}
-                  {activePlayer === "dster" && game.puzzleNum && (
-                    <button onClick={() => { setCatPuzzleNum(game.puzzleNum); setCatImage(null); setCatError(""); setCatScreen(true); }}
+                  {activePlayer === "dster" && (
+                    <button onClick={() => {
+                      // Use stored puzzle number, or infer from date, or leave blank for manual entry
+                      const pNum = game.puzzleNum || String(getTodaysPuzzleNum(data.games, game.date) || "");
+                      setCatPuzzleNum(pNum);
+                      setCatImage(null); setCatError(""); setCatScreen(true);
+                    }}
                       style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:5, color:game.categories ? "#6DBF6D" : T.muted, fontSize:10, cursor:"pointer", fontFamily:mono, padding:"2px 7px" }}>
                       {game.categories ? "✓ cats" : "+ cats"}
                     </button>
