@@ -905,13 +905,22 @@ export default function App() {
           <input type="file" accept="image/*" style={{ display:"none" }} onChange={e => {
             const file = e.target.files[0];
             if (!file) return;
-            const reader = new FileReader();
-            reader.onload = ev => {
-              const [header, data] = ev.target.result.split(",");
-              const mime = header.match(/data:([^;]+)/)?.[1] || "image/png";
-              setCatImage({ data, mime });
+            // Compress image before sending to avoid 413 errors
+            const img = new Image();
+            const objectUrl = URL.createObjectURL(file);
+            img.onload = () => {
+              URL.revokeObjectURL(objectUrl);
+              const canvas = document.createElement("canvas");
+              const MAX = 1200;
+              const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+              canvas.width = Math.round(img.width * scale);
+              canvas.height = Math.round(img.height * scale);
+              canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+              const compressed = canvas.toDataURL("image/jpeg", 0.85);
+              const [header, data] = compressed.split(",");
+              setCatImage({ data, mime: "image/jpeg" });
             };
-            reader.readAsDataURL(file);
+            img.src = objectUrl;
           }} />
           {catImage
             ? <div style={{ color:T.accent, fontSize:13, fontWeight:700 }}>✓ Image selected ({catImage?.mime || ""}) — ready to extract</div>
