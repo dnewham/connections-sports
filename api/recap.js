@@ -14,23 +14,22 @@ export default async function handler(req, res) {
     "anthropic-version": "2023-06-01",
   };
 
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
   try {
     // Step 1: Look up category names for each puzzle via web search
+    // Use a very concise prompt to stay within token limits
     let categoryContext = "";
     if (puzzles && puzzles.length > 0) {
-      const searchPrompt = `Search the web and find the four category names (yellow, green, blue, purple) for each of these NYT Connections Sports Edition puzzles. For each puzzle, search for something like "Connections Sports Edition puzzle #NNN answers categories". Return ONLY a structured list like:
-Puzzle #NNN (Date): Yellow: X, Green: Y, Blue: Z, Purple: W
-If you cannot find a puzzle's categories, skip it. Do not write anything else.
-
-Puzzles to look up:
-${puzzles.map(p => `Puzzle #${p.num} (${p.date})`).join("\n")}`;
+      const puzzleList = puzzles.map(p => `#${p.num} (${p.date})`).join(", ");
+      const searchPrompt = `Find the yellow/green/blue/purple category names for these NYT Connections Sports Edition puzzles: ${puzzleList}. Return only a list like "Puzzle #NNN: Yellow: X, Green: Y, Blue: Z, Purple: W". Skip any you can't find.`;
 
       const searchResponse = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers,
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 2000,
+          max_tokens: 1000,
           tools: [{ type: "web_search_20250305", name: "web_search" }],
           messages: [{ role: "user", content: searchPrompt }],
         }),
@@ -41,11 +40,14 @@ ${puzzles.map(p => `Puzzle #${p.num} (${p.date})`).join("\n")}`;
         const textBlocks = (searchData.content || []).filter(b => b.type === "text");
         categoryContext = textBlocks.map(b => b.text).join("").trim();
       }
+
+      // Wait 15 seconds between calls to avoid hitting the per-minute token limit
+      await sleep(15000);
     }
 
     // Step 2: Generate the recap, injecting category context if we got any
     const fullPrompt = categoryContext
-      ? `${prompt}\n\nPUZZLE CATEGORIES (use these in your commentary):\n${categoryContext}`
+      ? `${prompt}\n\nPUZZLE CATEGORIES (weave into commentary):\n${categoryContext}`
       : prompt;
 
     const recapResponse = await fetch("https://api.anthropic.com/v1/messages", {
