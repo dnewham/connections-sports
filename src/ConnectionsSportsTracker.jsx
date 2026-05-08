@@ -1139,17 +1139,34 @@ export default function App() {
           {data.games.length===0 && <div style={{ color:T.muted, textAlign:"center", padding:40, fontSize:13 }}>No games logged yet.</div>}
           {data.games.map(game=>(
             <Card key={game.id} T={T} style={{ marginBottom:12 }}>
-              <div style={{ fontSize:12, color:T.muted, marginBottom:10, display:"flex", justifyContent:"space-between" }}>
+              <div style={{ fontSize:12, color:T.muted, marginBottom:10, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                 <span>{game.puzzleNum?`Puzzle #${game.puzzleNum}${game.date ? " · " + game.date : ""}`:game.date}</span>
-                {game.difficulty&&<span style={{ textTransform:"capitalize" }}>{game.difficulty}</span>}
-              </div>
-              {game.categories && (
-                <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:10 }}>
-                  {["yellow","green","blue","purple"].map(color => game.categories[color] ? (
-                    <span key={color} style={{ fontSize:10, background:COLOR[color].bg, color:COLOR[color].text, borderRadius:4, padding:"2px 7px", fontWeight:700, letterSpacing:"0.04em" }}>{game.categories[color]}</span>
-                  ) : null)}
+                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  {game.difficulty&&<span style={{ textTransform:"capitalize" }}>{game.difficulty}</span>}
+                  {activePlayer === "dster" && game.puzzleNum && (
+                    <button onClick={() => { setCatPuzzleNum(game.puzzleNum); setCatImage(null); setCatError(""); setCatScreen(true); }}
+                      style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:5, color:game.categories ? "#6DBF6D" : T.muted, fontSize:10, cursor:"pointer", fontFamily:mono, padding:"2px 7px" }}>
+                      {game.categories ? "✓ cats" : "+ cats"}
+                    </button>
+                  )}
                 </div>
-              )}
+              </div>
+              {game.categories && (() => {
+                const todayPuzzleNum = getTodaysPuzzleNum(data.games, todayStr());
+                const isToday = game.puzzleNum && todayPuzzleNum && parseInt(game.puzzleNum) === todayPuzzleNum;
+                const todayHasSubmissions = isToday && data.games
+                  .filter(g => g.puzzleNum && parseInt(g.puzzleNum) === todayPuzzleNum)
+                  .flatMap(g => g.players).length > 0;
+                const showCats = activePlayer === "dster" || !isToday || todayHasSubmissions;
+                if (!showCats) return null;
+                return (
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:10 }}>
+                    {["yellow","green","blue","purple"].map(color => game.categories[color] ? (
+                      <span key={color} style={{ fontSize:10, background:COLOR[color].bg, color:COLOR[color].text, borderRadius:4, padding:"2px 7px", fontWeight:700, letterSpacing:"0.04em" }}>{game.categories[color]}</span>
+                    ) : null)}
+                  </div>
+                );
+              })()}
               {[...game.players].sort((a,b) => {
                 if (a.dnf && b.dnf) return 0;
                 if (a.dnf) return 1; if (b.dnf) return -1;
