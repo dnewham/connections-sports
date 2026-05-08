@@ -17,35 +17,44 @@ export default async function handler(req, res) {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
   try {
-    // Step 1: Look up category names for each puzzle via web search
-    // Use a very concise prompt to stay within token limits
-    let categoryContext = "";
+    // Step 1: Look up categories one puzzle at a time with delays between each
+    const categoryLines = [];
+
     if (puzzles && puzzles.length > 0) {
-      const puzzleList = puzzles.map(p => `#${p.num} (${p.date})`).join(", ");
-      const searchPrompt = `Find the yellow/green/blue/purple category names for these NYT Connections Sports Edition puzzles: ${puzzleList}. Return only a list like "Puzzle #NNN: Yellow: X, Green: Y, Blue: Z, Purple: W". Skip any you can't find.`;
+      for (const puzzle of puzzles) {
+        try {
+          const searchPrompt = `What are the four category names (yellow, green, blue, purple) for NYT Connections Sports Edition puzzle #${puzzle.num} on ${puzzle.date}? Reply in one line only: "Yellow: X, Green: Y, Blue: Z, Purple: W". If unknown, reply "Not found".`;
 
-      const searchResponse = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          tools: [{ type: "web_search_20250305", name: "web_search" }],
-          messages: [{ role: "user", content: searchPrompt }],
-        }),
-      });
+          const searchResponse = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              model: "claude-sonnet-4-20250514",
+              max_tokens: 150,
+              tools: [{ type: "web_search_20250305", name: "web_search" }],
+              messages: [{ role: "user", content: searchPrompt }],
+            }),
+          });
 
-      if (searchResponse.ok) {
-        const searchData = await searchResponse.json();
-        const textBlocks = (searchData.content || []).filter(b => b.type === "text");
-        categoryContext = textBlocks.map(b => b.text).join("").trim();
+          if (searchResponse.ok) {
+            const searchData = await searchResponse.json();
+            const textBlocks = (searchData.content || []).filter(b => b.type === "text");
+            const result = textBlocks.map(b => b.text).join("").trim();
+            if (result && !result.toLowerCase().includes("not found")) {
+              categoryLines.push(`Puzzle #${puzzle.num} (${puzzle.date}): ${result}`);
+            }
+          }
+        } catch (e) {
+          // Skip this puzzle if search fails
+        }
+
+        // Wait between each puzzle search to stay under rate limits
+        await sleep(10000);
       }
-
-      // Wait 15 seconds between calls to avoid hitting the per-minute token limit
-      await sleep(15000);
     }
 
-    // Step 2: Generate the recap, injecting category context if we got any
+    // Step 2: Generate recap with category context appended
+    const categoryContext = categoryLines.join("\n");
     const fullPrompt = categoryContext
       ? `${prompt}\n\nPUZZLE CATEGORIES (weave into commentary):\n${categoryContext}`
       : prompt;
