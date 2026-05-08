@@ -640,7 +640,7 @@ Write a weekly recap in the style of a mix between ESPN SportsCenter, competitiv
 - Use the players' full names throughout`;
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 180000); // 180 second timeout (one search per puzzle + delays)
+  const timeout = setTimeout(() => controller.abort(), 60000); // 60 second timeout
   let response;
   try {
     // Build list of puzzles for category lookup

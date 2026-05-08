@@ -1,3 +1,25 @@
+// Helper: build Technobezz URL from puzzle number and date string (YYYY-MM-DD)
+function buildTechnobezzUrl(puzzleNum, dateStr) {
+  const months = ["january","february","march","april","may","june","july","august","september","october","november","december"];
+  const d = new Date(dateStr + "T12:00:00");
+  const month = months[d.getMonth()];
+  const day = d.getDate();
+  const year = d.getFullYear();
+  return `https://www.technobezz.com/news/nyt-connections-sports-edition-${puzzleNum}-hints-and-answers-for-${month}-${day}-${year}`;
+}
+
+// Helper: extract category names from Technobezz page HTML
+function extractCategories(html) {
+  const result = {};
+  const colors = ["Yellow", "Green", "Blue", "Purple"];
+  for (const color of colors) {
+    // Matches: "Yellow (Category Name):" or "Yellow (Category Name)\n"
+    const match = html.match(new RegExp(`\\*\\*${color}\\s*\\(([^)]+)\\)`));
+    if (match) result[color.toLowerCase()] = match[1].trim();
+  }
+  return Object.keys(result).length >= 2 ? result : null;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -8,60 +30,46 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Missing prompt" });
   }
 
-  const headers = {
+  const apiHeaders = {
     "Content-Type": "application/json",
     "x-api-key": process.env.ANTHROPIC_API_KEY,
     "anthropic-version": "2023-06-01",
   };
 
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
-
   try {
-    // Step 1: Look up categories one puzzle at a time with delays between each
+    // Step 1: Fetch category names for each puzzle from Technobezz (static HTML, no JS needed)
     const categoryLines = [];
-
     if (puzzles && puzzles.length > 0) {
       for (const puzzle of puzzles) {
         try {
-          const searchPrompt = `What are the four category names (yellow, green, blue, purple) for NYT Connections Sports Edition puzzle #${puzzle.num} on ${puzzle.date}? Reply in one line only: "Yellow: X, Green: Y, Blue: Z, Purple: W". If unknown, reply "Not found".`;
-
-          const searchResponse = await fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              model: "claude-sonnet-4-20250514",
-              max_tokens: 150,
-              tools: [{ type: "web_search_20250305", name: "web_search" }],
-              messages: [{ role: "user", content: searchPrompt }],
-            }),
+          const url = buildTechnobezzUrl(puzzle.num, puzzle.date);
+          const pageRes = await fetch(url, {
+            headers: { "User-Agent": "Mozilla/5.0 (compatible; recap-bot/1.0)" }
           });
-
-          if (searchResponse.ok) {
-            const searchData = await searchResponse.json();
-            const textBlocks = (searchData.content || []).filter(b => b.type === "text");
-            const result = textBlocks.map(b => b.text).join("").trim();
-            if (result && !result.toLowerCase().includes("not found")) {
-              categoryLines.push(`Puzzle #${puzzle.num} (${puzzle.date}): ${result}`);
+          if (pageRes.ok) {
+            const html = await pageRes.text();
+            const cats = extractCategories(html);
+            if (cats) {
+              const line = `Puzzle #${puzzle.num} (${puzzle.date}): Yellow: ${cats.yellow || "?"}, Green: ${cats.green || "?"}, Blue: ${cats.blue || "?"}, Purple: ${cats.purple || "?"}`;
+              categoryLines.push(line);
             }
           }
         } catch (e) {
-          // Skip this puzzle if search fails
+          // Skip this puzzle if fetch fails
         }
-
-        // Wait between each puzzle search to stay under rate limits
-        await sleep(10000);
       }
     }
 
-    // Step 2: Generate recap with category context appended
-    const categoryContext = categoryLines.join("\n");
-    const fullPrompt = categoryContext
-      ? `${prompt}\n\nPUZZLE CATEGORIES (weave into commentary):\n${categoryContext}`
-      : prompt;
+    // Step 2: Generate recap, injecting any categories we found
+    const categoryContext = categoryLines.length > 0
+      ? `\n\nPUZZLE CATEGORIES (weave into commentary where relevant):\n${categoryLines.join("\n")}`
+      : "";
+
+    const fullPrompt = prompt + categoryContext;
 
     const recapResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers,
+      headers: apiHeaders,
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
         max_tokens: 2000,
