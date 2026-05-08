@@ -534,6 +534,24 @@ function shareTodayResults(games, players, dateStr, setCopied) {
   }).catch(() => alert("Could not copy — try again"));
 }
 
+// ── Category Extractor ────────────────────────────────────────────────────
+async function extractCategoriesFromImage(base64Image) {
+  const response = await fetch("/api/recap", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      extractCategories: true,
+      imageData: base64Image,
+    }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || `API error ${response.status}`);
+  }
+  const data = await response.json();
+  return data.categories; // { yellow, green, blue, purple }
+}
+
 // ── Weekly Recap Generator ────────────────────────────────────────────────
 async function generateRecap(games, players, weekStr) {
   // Collect all games from the target week
@@ -560,7 +578,12 @@ async function generateRecap(games, players, weekStr) {
       return `  ${i+1}. ${p.name}: ${p.finalTime}${entry?.dnf ? " (DNF)" : ` (raw ${entry?.rawTime}, adjustments: ${adjs})`}`;
     });
     if (results.length === 0) return null;
-    return `${label}:\n${results.join("\n")}`;
+    // Include stored category names if available
+    const storedCats = dayGames.find(g => g.categories)?.categories;
+    const catLine = storedCats
+      ? `  Categories — Yellow: ${storedCats.yellow || "?"}, Green: ${storedCats.green || "?"}, Blue: ${storedCats.blue || "?"}, Purple: ${storedCats.purple || "?"}`
+      : "";
+    return `${label}:\n${results.join("\n")}${catLine ? "\n" + catLine : ""}`;
   }).filter(Boolean);
 
   // Weekly standings
@@ -686,6 +709,11 @@ export default function App() {
   const [renamingPlayer, setRenamingPlayer] = useState(null); // name currently being renamed
   const [renameValue, setRenameValue]   = useState("");
   const [recap, setRecap]             = useState(null);  // generated recap text
+  const [catScreen, setCatScreen]     = useState(false); // show category upload UI
+  const [catImage, setCatImage]       = useState(null);  // base64 image
+  const [catPuzzleNum, setCatPuzzleNum] = useState("");   // puzzle number for category entry
+  const [catLoading, setCatLoading]   = useState(false);
+  const [catError, setCatError]       = useState("");
   const [recapLoading, setRecapLoading] = useState(false);
   const [recapWeek, setRecapWeek]     = useState(null);  // which week the recap is for
   const [copiedRecap, setCopiedRecap] = useState(false);
@@ -860,6 +888,72 @@ export default function App() {
           <Btn T={T} variant="ghost" onClick={() => setLogStep("paste")}>← Re-paste</Btn>
           <Btn T={T} onClick={submitEntry} disabled={saving}>{saving?"Saving…":"Save ✓"}</Btn>
         </div>
+      </div>
+    </Screen>
+  );
+
+  // ── CATEGORY UPLOAD ──────────────────────────────────────────────────────
+  if (catScreen) return (
+    <Screen title="Add Puzzle Categories" onBack={() => { setCatScreen(false); setCatImage(null); setCatError(""); setCatPuzzleNum(""); }} T={T}>
+      <div style={{ marginTop:20 }}>
+        <div style={{ fontSize:12, color:T.muted, marginBottom:8 }}>Puzzle number to tag categories to:</div>
+        <input value={catPuzzleNum} onChange={e => setCatPuzzleNum(e.target.value)} placeholder="e.g. 591"
+          style={{ width:"100%", background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, color:T.text, padding:"10px 12px", fontFamily:mono, fontSize:14, outline:"none", boxSizing:"border-box", marginBottom:16 }} />
+        <div style={{ fontSize:12, color:T.muted, marginBottom:8 }}>Upload a screenshot of the puzzle categories:</div>
+        <label style={{ display:"block", background:T.surface, border:`2px dashed ${catImage ? T.accent : T.border}`, borderRadius:10, padding:24, textAlign:"center", cursor:"pointer" }}>
+          <input type="file" accept="image/*" style={{ display:"none" }} onChange={e => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = ev => setCatImage(ev.target.result.split(",")[1]);
+            reader.readAsDataURL(file);
+          }} />
+          {catImage
+            ? <div style={{ color:T.accent, fontSize:13, fontWeight:700 }}>✓ Image selected — ready to extract</div>
+            : <div style={{ color:T.muted, fontSize:13 }}>📷 Tap to select screenshot</div>}
+        </label>
+        {catError && <div style={{ marginTop:10, fontSize:12, color:"#e07070" }}>⚠ {catError}</div>}
+        <Btn T={T} disabled={!catImage || !catPuzzleNum.trim() || catLoading} onClick={async () => {
+          setCatLoading(true); setCatError("");
+          try {
+            const cats = await extractCategoriesFromImage(catImage);
+            if (!cats || !cats.yellow) { setCatError("Could not extract categories — try a clearer screenshot"); setCatLoading(false); return; }
+            // Find the game in Firestore and update it
+            const fresh = await loadData();
+            const puzzleId = `puzzle-${catPuzzleNum.trim()}`;
+            const gameIdx = fresh.games.findIndex(g => g.id === puzzleId);
+            if (gameIdx >= 0) {
+              fresh.games[gameIdx] = { ...fresh.games[gameIdx], categories: cats };
+            } else {
+              // Create a stub game entry just to store the categories
+              fresh.games.push({ id: puzzleId, puzzleNum: catPuzzleNum.trim(), date: todayStr(), categories: cats, players: [] });
+            }
+            await saveData(fresh);
+            setData(fresh);
+            setCatScreen(false); setCatImage(null); setCatPuzzleNum("");
+          } catch(e) {
+            setCatError(e.message || "Unknown error");
+          }
+          setCatLoading(false);
+        }} style={{ width:"100%", marginTop:16 }}>
+          {catLoading ? "Extracting…" : "Extract & Save Categories"}
+        </Btn>
+        {/* Preview extracted categories if already stored for this puzzle */}
+        {(() => {
+          const existing = data.games.find(g => g.puzzleNum === catPuzzleNum.trim())?.categories;
+          if (!existing) return null;
+          return (
+            <Card T={T} style={{ marginTop:16 }}>
+              <div style={{ fontSize:11, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginBottom:10 }}>Stored Categories</div>
+              {["yellow","green","blue","purple"].map(color => (
+                <div key={color} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+                  <span style={{ width:10, height:10, borderRadius:"50%", background:COLOR[color].bg, display:"inline-block", flexShrink:0 }} />
+                  <span style={{ fontSize:13 }}>{existing[color] || "—"}</span>
+                </div>
+              ))}
+            </Card>
+          );
+        })()}
       </div>
     </Screen>
   );
@@ -1044,6 +1138,13 @@ export default function App() {
                 <span>{game.puzzleNum?`Puzzle #${game.puzzleNum}${game.date ? " · " + game.date : ""}`:game.date}</span>
                 {game.difficulty&&<span style={{ textTransform:"capitalize" }}>{game.difficulty}</span>}
               </div>
+              {game.categories && (
+                <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:10 }}>
+                  {["yellow","green","blue","purple"].map(color => game.categories[color] ? (
+                    <span key={color} style={{ fontSize:10, background:COLOR[color].bg, color:COLOR[color].text, borderRadius:4, padding:"2px 7px", fontWeight:700, letterSpacing:"0.04em" }}>{game.categories[color]}</span>
+                  ) : null)}
+                </div>
+              )}
               {[...game.players].sort((a,b) => {
                 if (a.dnf && b.dnf) return 0;
                 if (a.dnf) return 1; if (b.dnf) return -1;
@@ -1148,6 +1249,9 @@ export default function App() {
           </div>
           <button onClick={() => { setActivePlayer(null); saveActivePlayer(null); }} style={{ background:"none", border:"none", color:T.muted, fontSize:12, cursor:"pointer", fontFamily:mono, fontWeight:700, letterSpacing:"0.04em", textTransform:"uppercase" }}>Switch ↗</button>
         </div>
+        {activePlayer === "dster" && (
+          <Btn T={T} variant="ghost" onClick={() => { setCatScreen(true); setCatPuzzleNum(String(getTodaysPuzzleNum(data.games, todayStr()) || "")); }} style={{ width:"100%", marginBottom:10, padding:12, boxSizing:"border-box" }}>🗂 Add Puzzle Categories</Btn>
+        )}
         <Btn T={T} variant="ghost" onClick={() => shareTodayResults(data.games, names, todayStr(), setCopied)} style={{ width:"100%", marginBottom:10, padding:12, boxSizing:"border-box" }}>{copied ? "✓ Copied!" : "📤 Share Today's Results"}</Btn>
         {(() => {
           // Show recap button for last week if there's data

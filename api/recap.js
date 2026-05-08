@@ -1,34 +1,9 @@
-// Helper: build Technobezz URL from puzzle number and date string (YYYY-MM-DD)
-function buildTechnobezzUrl(puzzleNum, dateStr) {
-  const months = ["january","february","march","april","may","june","july","august","september","october","november","december"];
-  const d = new Date(dateStr + "T12:00:00");
-  const month = months[d.getMonth()];
-  const day = d.getDate();
-  const year = d.getFullYear();
-  return `https://www.technobezz.com/news/nyt-connections-sports-edition-${puzzleNum}-hints-and-answers-for-${month}-${day}-${year}`;
-}
-
-// Helper: extract category names from Technobezz page HTML
-function extractCategories(html) {
-  const result = {};
-  const colors = ["Yellow", "Green", "Blue", "Purple"];
-  for (const color of colors) {
-    // Matches: "Yellow (Category Name):" or "Yellow (Category Name)\n"
-    const match = html.match(new RegExp(`\\*\\*${color}\\s*\\(([^)]+)\\)`));
-    if (match) result[color.toLowerCase()] = match[1].trim();
-  }
-  return Object.keys(result).length >= 2 ? result : null;
-}
-
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { prompt, puzzles } = req.body;
-  if (!prompt) {
-    return res.status(400).json({ error: "Missing prompt" });
-  }
+  const { prompt, puzzles, extractCategories, imageData } = req.body;
 
   const apiHeaders = {
     "Content-Type": "application/json",
@@ -37,35 +12,54 @@ export default async function handler(req, res) {
   };
 
   try {
-    // Step 1: Fetch category names for each puzzle from Technobezz (static HTML, no JS needed)
-    const categoryLines = [];
-    if (puzzles && puzzles.length > 0) {
-      for (const puzzle of puzzles) {
-        try {
-          const url = buildTechnobezzUrl(puzzle.num, puzzle.date);
-          const pageRes = await fetch(url, {
-            headers: { "User-Agent": "Mozilla/5.0 (compatible; recap-bot/1.0)" }
-          });
-          if (pageRes.ok) {
-            const html = await pageRes.text();
-            const cats = extractCategories(html);
-            if (cats) {
-              const line = `Puzzle #${puzzle.num} (${puzzle.date}): Yellow: ${cats.yellow || "?"}, Green: ${cats.green || "?"}, Blue: ${cats.blue || "?"}, Purple: ${cats.purple || "?"}`;
-              categoryLines.push(line);
-            }
-          }
-        } catch (e) {
-          // Skip this puzzle if fetch fails
-        }
+    // ── MODE 1: Extract categories from a screenshot image ────────────────
+    if (extractCategories && imageData) {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: apiHeaders,
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 300,
+          messages: [{
+            role: "user",
+            content: [
+              {
+                type: "image",
+                source: { type: "base64", media_type: "image/jpeg", data: imageData },
+              },
+              {
+                type: "text",
+                text: `This is a screenshot from the NYT Connections Sports Edition puzzle. Extract the four category names (one per color group). Return ONLY valid JSON in this exact format, no other text:
+{"yellow": "CATEGORY NAME", "green": "CATEGORY NAME", "blue": "CATEGORY NAME", "purple": "CATEGORY NAME"}
+If a category is not visible, use null for its value.`,
+              }
+            ],
+          }],
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        return res.status(response.status).json({ error: err.error?.message || "API error" });
+      }
+
+      const data = await response.json();
+      const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("").trim();
+      try {
+        const categories = JSON.parse(text.replace(/```json|```/g, "").trim());
+        return res.status(200).json({ categories });
+      } catch {
+        return res.status(200).json({ categories: null, raw: text });
       }
     }
 
-    // Step 2: Generate recap, injecting any categories we found
-    const categoryContext = categoryLines.length > 0
-      ? `\n\nPUZZLE CATEGORIES (weave into commentary where relevant):\n${categoryLines.join("\n")}`
-      : "";
+    // ── MODE 2: Generate weekly recap ─────────────────────────────────────
+    if (!prompt) {
+      return res.status(400).json({ error: "Missing prompt" });
+    }
 
-    const fullPrompt = prompt + categoryContext;
+    // Inject any stored category data passed from the client
+    const fullPrompt = prompt;
 
     const recapResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
