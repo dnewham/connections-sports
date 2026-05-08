@@ -18,7 +18,13 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
-        max_tokens: 1000,
+        max_tokens: 4000,
+        tools: [
+          {
+            type: "web_search_20250305",
+            name: "web_search",
+          }
+        ],
         messages: [{ role: "user", content: prompt }],
       }),
     });
@@ -29,7 +35,11 @@ export default async function handler(req, res) {
     }
 
     const data = await response.json();
-    const text = data.content?.[0]?.text || "Could not generate recap.";
+
+    // Extract final text — response may include tool_use and tool_result blocks
+    const textBlocks = (data.content || []).filter(b => b.type === "text");
+    const text = textBlocks.map(b => b.text).join("").trim() || "Could not generate recap.";
+
     return res.status(200).json({ text });
   } catch (e) {
     return res.status(500).json({ error: e.message || "Unknown error" });
