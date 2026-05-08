@@ -3,7 +3,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { prompt } = req.body;
+  const { prompt, puzzles } = req.body;
   if (!prompt) {
     return res.status(400).json({ error: "Missing prompt" });
   }
@@ -14,90 +14,57 @@ export default async function handler(req, res) {
     "anthropic-version": "2023-06-01",
   };
 
-  const tools = [{ type: "web_search_20250305", name: "web_search" }];
-
   try {
-    const messages = [{ role: "user", content: prompt }];
+    // Step 1: Look up category names for each puzzle via web search
+    let categoryContext = "";
+    if (puzzles && puzzles.length > 0) {
+      const searchPrompt = `Search the web and find the four category names (yellow, green, blue, purple) for each of these NYT Connections Sports Edition puzzles. For each puzzle, search for something like "Connections Sports Edition puzzle #NNN answers categories". Return ONLY a structured list like:
+Puzzle #NNN (Date): Yellow: X, Green: Y, Blue: Z, Purple: W
+If you cannot find a puzzle's categories, skip it. Do not write anything else.
 
-    // Agentic loop — keep going until Claude stops using tools
-    let iterations = 0;
-    while (iterations < 10) {
-      iterations++;
+Puzzles to look up:
+${puzzles.map(p => `Puzzle #${p.num} (${p.date})`).join("\n")}`;
 
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const searchResponse = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers,
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 4000,
-          tools,
-          messages,
+          max_tokens: 2000,
+          tools: [{ type: "web_search_20250305", name: "web_search" }],
+          messages: [{ role: "user", content: searchPrompt }],
         }),
       });
 
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        return res.status(response.status).json({ error: err.error?.message || "API error" });
-      }
-
-      const data = await response.json();
-      const content = data.content || [];
-
-      // Add Claude's response to the message history
-      messages.push({ role: "assistant", content });
-
-      // If Claude is done (no more tool calls), extract and return the text
-      if (data.stop_reason === "end_turn") {
-        const text = content
-          .filter(b => b.type === "text")
-          .map(b => b.text)
-          .join("")
-          .trim() || "Could not generate recap.";
-        return res.status(200).json({ text });
-      }
-
-      // If Claude wants to use tools, process each tool_use block
-      if (data.stop_reason === "tool_use") {
-        const toolUseBlocks = content.filter(b => b.type === "tool_use");
-        const toolResults = [];
-
-        for (const toolUse of toolUseBlocks) {
-          if (toolUse.name === "web_search") {
-            // The web_search tool result is already included in the response
-            // by Anthropic's API — we just need to pass it back
-            // Find the corresponding tool_result in content if present
-            const resultBlock = content.find(
-              b => b.type === "tool_result" && b.tool_use_id === toolUse.id
-            );
-            if (resultBlock) {
-              toolResults.push(resultBlock);
-            } else {
-              // Shouldn't happen with server-side web search, but handle gracefully
-              toolResults.push({
-                type: "tool_result",
-                tool_use_id: toolUse.id,
-                content: "Search results not available.",
-              });
-            }
-          }
-        }
-
-        // Add tool results as a user message to continue the conversation
-        if (toolResults.length > 0) {
-          messages.push({ role: "user", content: toolResults });
-        } else {
-          // No tool results to add — break to avoid infinite loop
-          break;
-        }
-      } else {
-        // Unknown stop reason — break
-        break;
+      if (searchResponse.ok) {
+        const searchData = await searchResponse.json();
+        const textBlocks = (searchData.content || []).filter(b => b.type === "text");
+        categoryContext = textBlocks.map(b => b.text).join("").trim();
       }
     }
 
-    // Fallback: extract any text from the last assistant message
-    const lastAssistant = messages.filter(m => m.role === "assistant").pop();
-    const text = (lastAssistant?.content || [])
+    // Step 2: Generate the recap, injecting category context if we got any
+    const fullPrompt = categoryContext
+      ? `${prompt}\n\nPUZZLE CATEGORIES (use these in your commentary):\n${categoryContext}`
+      : prompt;
+
+    const recapResponse = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 2000,
+        messages: [{ role: "user", content: fullPrompt }],
+      }),
+    });
+
+    if (!recapResponse.ok) {
+      const err = await recapResponse.json().catch(() => ({}));
+      return res.status(recapResponse.status).json({ error: err.error?.message || "API error" });
+    }
+
+    const recapData = await recapResponse.json();
+    const text = (recapData.content || [])
       .filter(b => b.type === "text")
       .map(b => b.text)
       .join("")

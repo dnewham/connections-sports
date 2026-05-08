@@ -636,16 +636,22 @@ Write a weekly recap in the style of a mix between ESPN SportsCenter, competitiv
 - Call out any streaks that were broken or extended during the week — this is significant news
 - End with some lighthearted trash talk or predictions for next week
 - Keep it fun, specific to the actual results, and around 250-350 words
+- If PUZZLE CATEGORIES are provided at the end of this prompt, weave them into the daily commentary — e.g. which category was the streak-breaker, which one surprised people, what the purple category was
 - Use the players' full names throughout`;
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+  const timeout = setTimeout(() => controller.abort(), 90000); // 90 second timeout (web search adds latency)
   let response;
   try {
+    // Build list of puzzles for category lookup
+    const puzzleList = dates.map(date => {
+      const pNum = getTodaysPuzzleNum(weekGames, date);
+      return pNum ? { num: pNum, date } : null;
+    }).filter(Boolean);
     response = await fetch("/api/recap", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({ prompt, puzzles: puzzleList }),
       signal: controller.signal,
     });
   } finally {
