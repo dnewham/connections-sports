@@ -492,7 +492,7 @@ function ThemePicker({ value, onChange, T }) {
 }
 
 // ── Share helper ───────────────────────────────────────────────────────────
-async function shareTodayResults(games, players, dateStr, setCopied) {
+async function shareTodayResults(games, players, dateStr, setCopied, zingerStyle) {
   const puzzleNum = getTodaysPuzzleNum(games, dateStr);
   const dayGames = puzzleNum
     ? games.filter(g => (g.puzzleNum && parseInt(g.puzzleNum) === puzzleNum) || (!g.puzzleNum && g.date === dateStr))
@@ -532,7 +532,8 @@ async function shareTodayResults(games, players, dateStr, setCopied) {
   // Generate a quick daily zinger via Claude API
   let zinger = "";
   try {
-    const zingerPrompt = `You are a comedy roast writer for a friend group's daily Connections Sports Edition competition. Write exactly 1-2 sentences roasting today's results. Be specific about who won, who struggled, and ruthlessly (but lovingly) call out any DNFs or slow times. Keep it savage, funny, and under 40 words.
+    const stylePrompt = zingerStyle ? zingerStyle.prompt : "You are a comedy roast writer";
+    const zingerPrompt = `${stylePrompt} for a friend group's daily Connections Sports Edition competition. Write exactly 1-2 sentences in that style commenting on today's results. Be specific about who won, who struggled, and call out any DNFs or slow times. Keep it under 40 words.
 
 Today's results:
 ${entries.map((e, i) => {
@@ -544,6 +545,7 @@ ${entries.map((e, i) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt: zingerPrompt }),
     });
+    // Note: zingerStyle already used in prompt above
     if (res.ok) {
       const d = await res.json();
       if (d.text) zinger = d.text.trim() + "\n\n";
@@ -572,6 +574,37 @@ async function extractCategoriesFromImage(base64Image, imageType) {
   }
   const data = await response.json();
   return data.categories; // { yellow, green, blue, purple }
+}
+
+// ── Zinger Styles ─────────────────────────────────────────────────────────
+const DEFAULT_ZINGER_STYLES = [
+  { id: "roast",    label: "Comedy Roast",    active: true,  prompt: "You are a comedy roast writer" },
+  { id: "halberstam", label: "David Halberstam", active: true, prompt: "You are David Halberstam, the legendary sports journalist known for sweeping narrative gravitas" },
+  { id: "mrt",      label: "Mr. T",           active: true,  prompt: "You are Mr. T. Use Mr. T's voice, mannerisms, and catchphrases" },
+  { id: "oliver",   label: "John Oliver",     active: true,  prompt: "You are John Oliver doing a Last Week Tonight segment" },
+  { id: "scott",    label: "Stuart Scott",    active: true,  prompt: "You are Stuart Scott, the legendary ESPN anchor known for his iconic catchphrases and hip-hop inspired sports commentary" },
+  { id: "buffett",  label: "Jimmy Buffett",   active: true,  prompt: "You are Jimmy Buffett, laid-back island vibes, margarita in hand" },
+  { id: "suntzu",   label: "Sun Tzu",         active: true,  prompt: "You are Sun Tzu, author of The Art of War, applying ancient military wisdom" },
+  { id: "socrates", label: "Socrates",        active: true,  prompt: "You are Socrates, using the Socratic method and philosophical questioning" },
+  { id: "obiwan",   label: "Obi-Wan Kenobi",  active: true,  prompt: "You are Obi-Wan Kenobi, wise Jedi master, speaking in Star Wars terms" },
+  { id: "colbert",  label: "Stephen Colbert", active: true,  prompt: "You are Stephen Colbert in full Late Show host mode, sharp wit and political-adjacent humor" },
+  { id: "yogi",     label: "Yogi Berra",      active: true,  prompt: "You are Yogi Berra, famous for your delightfully paradoxical malapropisms and accidental wisdom" },
+  { id: "hemingway",label: "Hemingway",        active: true,  prompt: "You are Ernest Hemingway. Short sentences. No adverbs. The dignity of the competition. The iceberg beneath." },
+];
+
+function getSavedZingerStyles() {
+  try {
+    const saved = localStorage.getItem("zingerStyles");
+    return saved ? JSON.parse(saved) : DEFAULT_ZINGER_STYLES;
+  } catch { return DEFAULT_ZINGER_STYLES; }
+}
+function saveZingerStyles(styles) {
+  try { localStorage.setItem("zingerStyles", JSON.stringify(styles)); } catch {}
+}
+function pickRandomZingerStyle(styles) {
+  const active = styles.filter(s => s.active);
+  if (active.length === 0) return null;
+  return active[Math.floor(Math.random() * active.length)];
 }
 
 // ── Weekly Recap Generator ────────────────────────────────────────────────
@@ -742,6 +775,10 @@ export default function App() {
   const [recapWeek, setRecapWeek]     = useState(null);  // which week the recap is for
   const [copiedRecap, setCopiedRecap] = useState(false);
   const [sharing, setSharing]         = useState(false);
+  const [zingerStyles, setZingerStyles] = useState(getSavedZingerStyles);
+  const [zingerScreen, setZingerScreen] = useState(false);
+  const [newStyleLabel, setNewStyleLabel] = useState("");
+  const [newStylePrompt, setNewStylePrompt] = useState("");
   const [activePlayer, setActivePlayer] = useState(getSavedActivePlayer);
 
   useEffect(() => { loadData().then(setData); }, []);
@@ -913,6 +950,46 @@ export default function App() {
           <Btn T={T} variant="ghost" onClick={() => setLogStep("paste")}>← Re-paste</Btn>
           <Btn T={T} onClick={submitEntry} disabled={saving}>{saving?"Saving…":"Save ✓"}</Btn>
         </div>
+      </div>
+    </Screen>
+  );
+
+  // ── ZINGER STYLES ────────────────────────────────────────────────────────
+  if (zingerScreen) return (
+    <Screen title="Zinger Styles" onBack={() => { setZingerScreen(false); setNewStyleLabel(""); setNewStylePrompt(""); }} T={T}>
+      <div style={{ marginTop:16 }}>
+        <div style={{ fontSize:11, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginBottom:8 }}>Active styles are randomly picked when sharing today's results</div>
+        {zingerStyles.map((style, i) => (
+          <Card key={style.id} T={T} style={{ marginBottom:8 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <input type="checkbox" checked={style.active} onChange={() => {
+                const updated = zingerStyles.map((s, j) => j === i ? { ...s, active: !s.active } : s);
+                setZingerStyles(updated); saveZingerStyles(updated);
+              }} style={{ width:16, height:16, accentColor:T.accent, cursor:"pointer", flexShrink:0 }} />
+              <div style={{ flex:1 }}>
+                <div style={{ fontWeight:700, fontSize:13 }}>{style.label}</div>
+                <div style={{ fontSize:11, color:T.muted, marginTop:2 }}>{style.prompt.slice(0, 60)}…</div>
+              </div>
+              {!DEFAULT_ZINGER_STYLES.find(d => d.id === style.id) && (
+                <button onClick={() => {
+                  const updated = zingerStyles.filter((_, j) => j !== i);
+                  setZingerStyles(updated); saveZingerStyles(updated);
+                }} style={{ background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:16, padding:"0 4px" }}>×</button>
+              )}
+            </div>
+          </Card>
+        ))}
+        <div style={{ marginTop:20, fontSize:11, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginBottom:8 }}>Add Custom Style</div>
+        <input value={newStyleLabel} onChange={e => setNewStyleLabel(e.target.value)} placeholder="Style name (e.g. Yogi Berra)"
+          style={{ width:"100%", background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, color:T.text, padding:"10px 12px", fontFamily:mono, fontSize:13, outline:"none", boxSizing:"border-box", marginBottom:8 }} />
+        <textarea value={newStylePrompt} onChange={e => setNewStylePrompt(e.target.value)} placeholder="Style prompt (e.g. You are Yogi Berra, famous for paradoxical wisdom and malapropisms)"
+          style={{ width:"100%", background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, color:T.text, padding:"10px 12px", fontFamily:mono, fontSize:13, outline:"none", boxSizing:"border-box", resize:"vertical", minHeight:80, marginBottom:8 }} />
+        <Btn T={T} disabled={!newStyleLabel.trim() || !newStylePrompt.trim()} onClick={() => {
+          const newStyle = { id: "custom_" + Date.now(), label: newStyleLabel.trim(), prompt: newStylePrompt.trim(), active: true };
+          const updated = [...zingerStyles, newStyle];
+          setZingerStyles(updated); saveZingerStyles(updated);
+          setNewStyleLabel(""); setNewStylePrompt("");
+        }} style={{ width:"100%" }}>Add Style</Btn>
       </div>
     </Screen>
   );
@@ -1320,9 +1397,12 @@ export default function App() {
           <button onClick={() => { setActivePlayer(null); saveActivePlayer(null); }} style={{ background:"none", border:"none", color:T.muted, fontSize:12, cursor:"pointer", fontFamily:mono, fontWeight:700, letterSpacing:"0.04em", textTransform:"uppercase" }}>Switch ↗</button>
         </div>
         {activePlayer === "dster" && (
+          <Btn T={T} variant="ghost" onClick={() => setZingerScreen(true)} style={{ width:"100%", marginBottom:10, padding:12, boxSizing:"border-box" }}>🎭 Zinger Styles ({zingerStyles.filter(s=>s.active).length} active)</Btn>
+        )}
+        {activePlayer === "dster" && (
           <Btn T={T} variant="ghost" onClick={() => { setCatScreen(true); setCatPuzzleNum(String(getTodaysPuzzleNum(data.games, todayStr()) || "")); }} style={{ width:"100%", marginBottom:10, padding:12, boxSizing:"border-box" }}>🗂 Add Puzzle Categories</Btn>
         )}
-        <Btn T={T} variant="ghost" onClick={async () => { if (sharing) return; setSharing(true); await shareTodayResults(data.games, names, todayStr(), setCopied); setSharing(false); }} style={{ width:"100%", marginBottom:10, padding:12, boxSizing:"border-box" }}>{copied ? "✓ Copied!" : sharing ? "✍️ Generating…" : "📤 Share Today's Results"}</Btn>
+        <Btn T={T} variant="ghost" onClick={async () => { if (sharing) return; setSharing(true); await shareTodayResults(data.games, names, todayStr(), setCopied, pickRandomZingerStyle(zingerStyles)); setSharing(false); }} style={{ width:"100%", marginBottom:10, padding:12, boxSizing:"border-box" }}>{copied ? "✓ Copied!" : sharing ? "✍️ Generating…" : "📤 Share Today's Results"}</Btn>
         {(() => {
           // Show recap button for last week if there's data
           const lastWeek = lastWeekStr();
