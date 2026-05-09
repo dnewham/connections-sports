@@ -492,7 +492,7 @@ function ThemePicker({ value, onChange, T }) {
 }
 
 // ── Share helper ───────────────────────────────────────────────────────────
-function shareTodayResults(games, players, dateStr, setCopied) {
+async function shareTodayResults(games, players, dateStr, setCopied) {
   const puzzleNum = getTodaysPuzzleNum(games, dateStr);
   const dayGames = puzzleNum
     ? games.filter(g => (g.puzzleNum && parseInt(g.puzzleNum) === puzzleNum) || (!g.puzzleNum && g.date === dateStr))
@@ -529,7 +529,28 @@ function shareTodayResults(games, players, dateStr, setCopied) {
     return parts.join("\n");
   });
   const text = header + "\n\n" + lines.join("\n\n");
-  navigator.clipboard.writeText(text).then(() => {
+  // Generate a quick daily zinger via Claude API
+  let zinger = "";
+  try {
+    const zingerPrompt = `You are the trash-talking, ESPN-style announcer for a friend group's daily Connections Sports Edition competition. Write exactly 1-2 sentences of punchy commentary for today's results. Be specific about who won, their time, and call out any DNFs or notable performances. Keep it fun, competitive, and under 40 words.
+
+Today's results:
+${entries.map((e, i) => {
+  const medals = ["🥇","🥈","🥉"];
+  return `${medals[i] || (i+1)+"."} ${e.name}: ${e.dnf ? "DNF" : e.finalTime}${e.adjustments?.length ? " ("+e.adjustments.map(a=>a.label).join(", ")+")" : ""}`;
+}).join("\n")}`;
+    const res = await fetch("/api/recap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: zingerPrompt }),
+    });
+    if (res.ok) {
+      const d = await res.json();
+      if (d.text) zinger = d.text.trim() + "\n\n";
+    }
+  } catch { /* silently skip zinger if API fails */ }
+
+  navigator.clipboard.writeText(zinger + text).then(() => {
     setCopied(true); setTimeout(() => setCopied(false), 2500);
   }).catch(() => alert("Could not copy — try again"));
 }
@@ -720,6 +741,7 @@ export default function App() {
   const [recapLoading, setRecapLoading] = useState(false);
   const [recapWeek, setRecapWeek]     = useState(null);  // which week the recap is for
   const [copiedRecap, setCopiedRecap] = useState(false);
+  const [sharing, setSharing]         = useState(false);
   const [activePlayer, setActivePlayer] = useState(getSavedActivePlayer);
 
   useEffect(() => { loadData().then(setData); }, []);
@@ -1300,7 +1322,7 @@ export default function App() {
         {activePlayer === "dster" && (
           <Btn T={T} variant="ghost" onClick={() => { setCatScreen(true); setCatPuzzleNum(String(getTodaysPuzzleNum(data.games, todayStr()) || "")); }} style={{ width:"100%", marginBottom:10, padding:12, boxSizing:"border-box" }}>🗂 Add Puzzle Categories</Btn>
         )}
-        <Btn T={T} variant="ghost" onClick={() => shareTodayResults(data.games, names, todayStr(), setCopied)} style={{ width:"100%", marginBottom:10, padding:12, boxSizing:"border-box" }}>{copied ? "✓ Copied!" : "📤 Share Today's Results"}</Btn>
+        <Btn T={T} variant="ghost" onClick={async () => { if (sharing) return; setSharing(true); await shareTodayResults(data.games, names, todayStr(), setCopied); setSharing(false); }} style={{ width:"100%", marginBottom:10, padding:12, boxSizing:"border-box" }}>{copied ? "✓ Copied!" : sharing ? "✍️ Generating…" : "📤 Share Today's Results"}</Btn>
         {(() => {
           // Show recap button for last week if there's data
           const lastWeek = lastWeekStr();
