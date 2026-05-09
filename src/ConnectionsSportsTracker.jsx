@@ -532,7 +532,7 @@ async function shareTodayResults(games, players, dateStr, setCopied) {
   // Generate a quick daily zinger via Claude API
   let zinger = "";
   try {
-    const zingerPrompt = `You are the trash-talking, ESPN-style announcer for a friend group's daily Connections Sports Edition competition. Write exactly 1-2 sentences of punchy commentary for today's results. Be specific about who won, their time, and call out any DNFs or notable performances. Keep it fun, competitive, and under 40 words.
+    const zingerPrompt = `You are a comedy roast writer for a friend group's daily Connections Sports Edition competition. Write exactly 1-2 sentences roasting today's results. Be specific about who won, who struggled, and ruthlessly (but lovingly) call out any DNFs or slow times. Keep it savage, funny, and under 40 words.
 
 Today's results:
 ${entries.map((e, i) => {
