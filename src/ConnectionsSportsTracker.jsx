@@ -596,7 +596,15 @@ const DEFAULT_ZINGER_STYLES = [
 function getSavedZingerStyles() {
   try {
     const saved = localStorage.getItem("zingerStyles");
-    return saved ? JSON.parse(saved) : DEFAULT_ZINGER_STYLES;
+    if (!saved) return DEFAULT_ZINGER_STYLES;
+    const parsed = JSON.parse(saved);
+    // Merge: add any new default styles not yet in localStorage
+    const savedIds = new Set(parsed.map(s => s.id));
+    const merged = [...parsed];
+    for (const def of DEFAULT_ZINGER_STYLES) {
+      if (!savedIds.has(def.id)) merged.push(def);
+    }
+    return merged;
   } catch { return DEFAULT_ZINGER_STYLES; }
 }
 function saveZingerStyles(styles) {
