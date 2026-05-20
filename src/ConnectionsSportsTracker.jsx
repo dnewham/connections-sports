@@ -492,7 +492,7 @@ function ThemePicker({ value, onChange, T }) {
 }
 
 // ── Share helper ───────────────────────────────────────────────────────────
-async function shareTodayResults(games, players, dateStr, setCopied, zingerStyle, zingerOnly) {
+async function shareTodayResults(games, players, dateStr, setCopied, zingerStyle, zingerOnly, setSharedText) {
   const puzzleNum = getTodaysPuzzleNum(games, dateStr);
   const dayGames = puzzleNum
     ? games.filter(g => (g.puzzleNum && parseInt(g.puzzleNum) === puzzleNum) || (!g.puzzleNum && g.date === dateStr))
@@ -552,7 +552,9 @@ ${entries.map((e, i) => {
     }
   } catch { /* silently skip zinger if API fails */ }
 
-  navigator.clipboard.writeText(zingerOnly ? zinger.trim() : zinger + text).then(() => {
+  const finalText = zingerOnly ? zinger.trim() : zinger + text;
+  if (setSharedText) setSharedText(finalText);
+  navigator.clipboard.writeText(finalText).then(() => {
     setCopied(true); setTimeout(() => setCopied(false), 2500);
   }).catch(() => alert("Could not copy — try again"));
 }
@@ -793,6 +795,7 @@ export default function App() {
   const [showStylePicker, setShowStylePicker] = useState(false);
   const [selectedStyle, setSelectedStyle] = useState(null); // null = random
   const [zingerOnly, setZingerOnly]   = useState(false);
+  const [sharedText, setSharedText]   = useState(null); // text shown in preview box
   const [zingerStyles, setZingerStyles] = useState(getSavedZingerStyles);
   const [zingerScreen, setZingerScreen] = useState(false);
   const [newStyleLabel, setNewStyleLabel] = useState("");
@@ -1421,7 +1424,7 @@ export default function App() {
           <Btn T={T} variant="ghost" onClick={() => { setCatScreen(true); setCatPuzzleNum(String(getTodaysPuzzleNum(data.games, todayStr()) || "")); }} style={{ width:"100%", marginBottom:10, padding:12, boxSizing:"border-box" }}>🗂 Add Puzzle Categories</Btn>
         )}
         <div style={{ display:"flex", gap:6, marginBottom:10 }}>
-          <Btn T={T} variant="ghost" onClick={async () => { if (sharing) return; setSharing(true); setShowStylePicker(false); await shareTodayResults(data.games, names, todayStr(), setCopied, selectedStyle || pickRandomZingerStyle(zingerStyles), zingerOnly); setSharing(false); }} style={{ flex:1, padding:12, boxSizing:"border-box" }}>{copied ? "✓ Copied!" : sharing ? "✍️ Generating…" : "📤 Share Today's Results"}</Btn>
+          <Btn T={T} variant="ghost" onClick={async () => { if (sharing) return; setSharing(true); setShowStylePicker(false); await shareTodayResults(data.games, names, todayStr(), setCopied, selectedStyle || pickRandomZingerStyle(zingerStyles), zingerOnly, setSharedText); setSharing(false); }} style={{ flex:1, padding:12, boxSizing:"border-box" }}>{copied ? "✓ Copied!" : sharing ? "✍️ Generating…" : "📤 Share Today's Results"}</Btn>
           {canEditZingerStyles(activePlayer) && (
             <button onClick={() => setShowStylePicker(p => !p)} style={{ background:showStylePicker ? `${T.accent}33` : T.surface, border:`1px solid ${showStylePicker ? T.accent : T.border}`, borderRadius:9, padding:"0 12px", cursor:"pointer", fontSize:16, color:T.muted }} title="Pick zinger style">🎭</button>
           )}
@@ -1441,6 +1444,15 @@ export default function App() {
               </div>
               <span style={{ fontSize:12, color:T.muted }}>Zinger Only <span style={{ color:T.text }}>{zingerOnly ? "(on — no player details)" : "(off — full results)"}</span></span>
             </div>
+          </Card>
+        )}
+        {sharedText && (
+          <Card T={T} style={{ marginBottom:14 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+              <div style={{ fontSize:11, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase" }}>Today's Share Text</div>
+              <button onClick={() => setSharedText(null)} style={{ background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:16, lineHeight:1, padding:"0 2px" }}>×</button>
+            </div>
+            <div style={{ fontSize:12, color:T.text, lineHeight:1.7, whiteSpace:"pre-wrap", fontFamily:mono }}>{sharedText}</div>
           </Card>
         )}
         {(() => {
