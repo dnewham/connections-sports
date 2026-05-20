@@ -492,7 +492,7 @@ function ThemePicker({ value, onChange, T }) {
 }
 
 // ── Share helper ───────────────────────────────────────────────────────────
-async function shareTodayResults(games, players, dateStr, setCopied, zingerStyle) {
+async function shareTodayResults(games, players, dateStr, setCopied, zingerStyle, zingerOnly) {
   const puzzleNum = getTodaysPuzzleNum(games, dateStr);
   const dayGames = puzzleNum
     ? games.filter(g => (g.puzzleNum && parseInt(g.puzzleNum) === puzzleNum) || (!g.puzzleNum && g.date === dateStr))
@@ -552,7 +552,7 @@ ${entries.map((e, i) => {
     }
   } catch { /* silently skip zinger if API fails */ }
 
-  navigator.clipboard.writeText(zinger + text).then(() => {
+  navigator.clipboard.writeText(zingerOnly ? zinger.trim() : zinger + text).then(() => {
     setCopied(true); setTimeout(() => setCopied(false), 2500);
   }).catch(() => alert("Could not copy — try again"));
 }
@@ -590,6 +590,7 @@ const DEFAULT_ZINGER_STYLES = [
   { id: "colbert",  label: "Stephen Colbert", active: true,  prompt: "You are Stephen Colbert in full Late Show host mode, sharp wit and political-adjacent humor" },
   { id: "yogi",     label: "Yogi Berra",      active: true,  prompt: "You are Yogi Berra, famous for your delightfully paradoxical malapropisms and accidental wisdom" },
   { id: "hemingway",label: "Hemingway",        active: true,  prompt: "You are Ernest Hemingway. Short sentences. No adverbs. The dignity of the competition. The iceberg beneath." },
+  { id: "rueben",   label: "Rueben McDaniel", active: true,  prompt: "You are Rueben McDaniel, beloved and legendary MBA professor of Complexity Science. You are brilliant, irreverent, deeply wise, and utterly unfiltered. Your style: raw Southern wit, mild profanity used naturally ('what the shit', 'son of a bitch', 'don't give a shit'), occasional Complexity Science references (edge of chaos, emergence, nonlinear systems), and sharp observations about human nature. You are tenured, old, and do not sugarcoat anything. When someone wins impressively, you might say 'praise the Lord and find out how it may hurt you.' When someone struggles, you call it like you see it. You don't mind people screwing up, just do it with class." },
 ];
 
 function getSavedZingerStyles() {
@@ -775,6 +776,9 @@ export default function App() {
   const [recapWeek, setRecapWeek]     = useState(null);  // which week the recap is for
   const [copiedRecap, setCopiedRecap] = useState(false);
   const [sharing, setSharing]         = useState(false);
+  const [showStylePicker, setShowStylePicker] = useState(false);
+  const [selectedStyle, setSelectedStyle] = useState(null); // null = random
+  const [zingerOnly, setZingerOnly]   = useState(false);
   const [zingerStyles, setZingerStyles] = useState(getSavedZingerStyles);
   const [zingerScreen, setZingerScreen] = useState(false);
   const [newStyleLabel, setNewStyleLabel] = useState("");
@@ -1402,7 +1406,29 @@ export default function App() {
         {activePlayer === "dster" && (
           <Btn T={T} variant="ghost" onClick={() => { setCatScreen(true); setCatPuzzleNum(String(getTodaysPuzzleNum(data.games, todayStr()) || "")); }} style={{ width:"100%", marginBottom:10, padding:12, boxSizing:"border-box" }}>🗂 Add Puzzle Categories</Btn>
         )}
-        <Btn T={T} variant="ghost" onClick={async () => { if (sharing) return; setSharing(true); await shareTodayResults(data.games, names, todayStr(), setCopied, pickRandomZingerStyle(zingerStyles)); setSharing(false); }} style={{ width:"100%", marginBottom:10, padding:12, boxSizing:"border-box" }}>{copied ? "✓ Copied!" : sharing ? "✍️ Generating…" : "📤 Share Today's Results"}</Btn>
+        <div style={{ display:"flex", gap:6, marginBottom:10 }}>
+          <Btn T={T} variant="ghost" onClick={async () => { if (sharing) return; setSharing(true); setShowStylePicker(false); await shareTodayResults(data.games, names, todayStr(), setCopied, selectedStyle || pickRandomZingerStyle(zingerStyles), zingerOnly); setSharing(false); }} style={{ flex:1, padding:12, boxSizing:"border-box" }}>{copied ? "✓ Copied!" : sharing ? "✍️ Generating…" : "📤 Share Today's Results"}</Btn>
+          {activePlayer === "dster" && (
+            <button onClick={() => setShowStylePicker(p => !p)} style={{ background:showStylePicker ? `${T.accent}33` : T.surface, border:`1px solid ${showStylePicker ? T.accent : T.border}`, borderRadius:9, padding:"0 12px", cursor:"pointer", fontSize:16, color:T.muted }} title="Pick zinger style">🎭</button>
+          )}
+        </div>
+        {activePlayer === "dster" && showStylePicker && (
+          <Card T={T} style={{ marginBottom:10 }}>
+            <div style={{ fontSize:11, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginBottom:8 }}>Zinger Style</div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:12 }}>
+              <button onClick={() => setSelectedStyle(null)} style={{ fontSize:11, fontFamily:mono, fontWeight:700, padding:"4px 10px", borderRadius:6, border:`1px solid ${selectedStyle===null ? T.accent : T.border}`, background:selectedStyle===null ? `${T.accent}22` : T.surface, color:selectedStyle===null ? T.accent : T.muted, cursor:"pointer" }}>🎲 Random</button>
+              {zingerStyles.filter(s => s.active).map(s => (
+                <button key={s.id} onClick={() => setSelectedStyle(s)} style={{ fontSize:11, fontFamily:mono, fontWeight:700, padding:"4px 10px", borderRadius:6, border:`1px solid ${selectedStyle?.id===s.id ? T.accent : T.border}`, background:selectedStyle?.id===s.id ? `${T.accent}22` : T.surface, color:selectedStyle?.id===s.id ? T.accent : T.muted, cursor:"pointer" }}>{s.label}</button>
+              ))}
+            </div>
+            <div style={{ display:"flex", alignItems:"center", gap:10, paddingTop:10, borderTop:`1px solid ${T.border}` }}>
+              <div onClick={() => setZingerOnly(z => !z)} style={{ width:36, height:20, borderRadius:10, background:zingerOnly ? T.accent : T.border, cursor:"pointer", position:"relative", transition:"background 0.2s", flexShrink:0 }}>
+                <div style={{ position:"absolute", top:3, left:zingerOnly ? 18 : 3, width:14, height:14, borderRadius:"50%", background:"#fff", transition:"left 0.2s" }} />
+              </div>
+              <span style={{ fontSize:12, color:T.muted }}>Zinger Only <span style={{ color:T.text }}>{zingerOnly ? "(on — no player details)" : "(off — full results)"}</span></span>
+            </div>
+          </Card>
+        )}
         {(() => {
           // Show recap button for last week if there's data
           const lastWeek = lastWeekStr();
