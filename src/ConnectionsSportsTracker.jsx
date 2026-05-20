@@ -576,6 +576,12 @@ async function extractCategoriesFromImage(base64Image, imageType) {
   return data.categories; // { yellow, green, blue, purple }
 }
 
+// ── Zinger Style Access ──────────────────────────────────────────────────
+// Players authorized to view/edit zinger styles. Persists across name changes
+// by storing names at time of authorization — update here if names change.
+const ZINGER_STYLE_PLAYERS = ["dster", "Liudacris", "Wily Mays Haze", "Rynomite"];
+function canEditZingerStyles(playerName) { return ZINGER_STYLE_PLAYERS.includes(playerName); }
+
 // ── Zinger Styles ─────────────────────────────────────────────────────────
 const DEFAULT_ZINGER_STYLES = [
   { id: "roast",    label: "Comedy Roast",    active: true,  prompt: "You are a comedy roast writer" },
@@ -1408,7 +1414,7 @@ export default function App() {
           </div>
           <button onClick={() => { setActivePlayer(null); saveActivePlayer(null); }} style={{ background:"none", border:"none", color:T.muted, fontSize:12, cursor:"pointer", fontFamily:mono, fontWeight:700, letterSpacing:"0.04em", textTransform:"uppercase" }}>Switch ↗</button>
         </div>
-        {activePlayer === "dster" && (
+        {canEditZingerStyles(activePlayer) && (
           <Btn T={T} variant="ghost" onClick={() => setZingerScreen(true)} style={{ width:"100%", marginBottom:10, padding:12, boxSizing:"border-box" }}>🎭 Zinger Styles ({zingerStyles.filter(s=>s.active).length} active)</Btn>
         )}
         {activePlayer === "dster" && (
@@ -1416,11 +1422,11 @@ export default function App() {
         )}
         <div style={{ display:"flex", gap:6, marginBottom:10 }}>
           <Btn T={T} variant="ghost" onClick={async () => { if (sharing) return; setSharing(true); setShowStylePicker(false); await shareTodayResults(data.games, names, todayStr(), setCopied, selectedStyle || pickRandomZingerStyle(zingerStyles), zingerOnly); setSharing(false); }} style={{ flex:1, padding:12, boxSizing:"border-box" }}>{copied ? "✓ Copied!" : sharing ? "✍️ Generating…" : "📤 Share Today's Results"}</Btn>
-          {activePlayer === "dster" && (
+          {canEditZingerStyles(activePlayer) && (
             <button onClick={() => setShowStylePicker(p => !p)} style={{ background:showStylePicker ? `${T.accent}33` : T.surface, border:`1px solid ${showStylePicker ? T.accent : T.border}`, borderRadius:9, padding:"0 12px", cursor:"pointer", fontSize:16, color:T.muted }} title="Pick zinger style">🎭</button>
           )}
         </div>
-        {activePlayer === "dster" && showStylePicker && (
+        {canEditZingerStyles(activePlayer) && showStylePicker && (
           <Card T={T} style={{ marginBottom:10 }}>
             <div style={{ fontSize:11, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginBottom:8 }}>Zinger Style</div>
             <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:12 }}>
