@@ -555,7 +555,8 @@ ${entries.map((e, i) => {
     }
   } catch { /* silently skip zinger if API fails */ }
 
-  const finalText = zingerOnly ? zinger.trim() : zinger + text;
+  const styleHeader = zingerStyle ? `${zingerStyle.label.toUpperCase()} TAKE\n` : "";
+  const finalText = zingerOnly ? styleHeader + zinger.trim() : styleHeader + zinger + text;
   if (setSharedText) setSharedText(finalText);
   if (setSharedStyleName) setSharedStyleName(zingerStyle ? zingerStyle.label : null);
   navigator.clipboard.writeText(finalText).then(() => {
