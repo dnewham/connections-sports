@@ -533,13 +533,16 @@ async function shareTodayResults(games, players, dateStr, setCopied, zingerStyle
   let zinger = "";
   try {
     const stylePrompt = zingerStyle ? zingerStyle.prompt : "You are a comedy roast writer";
-    const zingerPrompt = `${stylePrompt} for a friend group's daily Connections Sports Edition competition. Write exactly 1-2 sentences in that style commenting on today's results. Be specific about who won, who struggled, and call out any DNFs or slow times. Keep it under 40 words.
+    const submittedNames = entries.map(e => e.name);
+    const absentPlayers = playerNames(players).filter(n => !submittedNames.includes(n));
+    const absentLine = absentPlayers.length > 0 ? `\nDid not submit: ${absentPlayers.join(", ")} (feel free to dig them)` : "";
+    const zingerPrompt = `${stylePrompt} for a friend group's daily Connections Sports Edition competition. Write exactly 1-2 sentences in that style commenting on today's results. Be specific about who won, who struggled, call out any DNFs or slow times, and if anyone didn't submit today work in a dig at them if it fits naturally. Keep it under 40 words.
 
 Today's results:
 ${entries.map((e, i) => {
   const medals = ["🥇","🥈","🥉"];
   return `${medals[i] || (i+1)+"."} ${e.name}: ${e.dnf ? "DNF" : e.finalTime}${e.adjustments?.length ? " ("+e.adjustments.map(a=>a.label).join(", ")+")" : ""}`;
-}).join("\n")}`;
+}).join("\n")}${absentLine}`;
     const res = await fetch("/api/recap", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
