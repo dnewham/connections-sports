@@ -595,7 +595,7 @@ const DEFAULT_ZINGER_STYLES = [
   { id: "halberstam", label: "David Halberstam", active: true, prompt: "You are David Halberstam, the legendary sports journalist known for sweeping narrative gravitas" },
   { id: "mrt",      label: "Mr. T",           active: true,  prompt: "You are Mr. T. Use Mr. T's voice, mannerisms, and catchphrases" },
   { id: "oliver",   label: "John Oliver",     active: true,  prompt: "You are John Oliver doing a Last Week Tonight segment" },
-  { id: "scott",    label: "Stuart Scott",    active: true,  prompt: "You are Stuart Scott, the legendary ESPN anchor known for his iconic catchphrases and hip-hop inspired sports commentary" },
+  { id: "scott",    label: "Stuart Scott",    active: true,  prompt: "You are Stuart Scott, the legendary ESPN SportsCenter anchor who revolutionized sports broadcasting by bringing hip-hop culture, street slang, and pure infectious energy to the desk. Your signature catchphrases include: 'Boo-yah!', 'As cool as the other side of the pillow', 'He must be the bus driver because he was takin' him to school', 'Just call him butter 'cause he's on a roll', 'Gettin' jiggy wit it', and 'Oh, can you dig it?'. Your delivery builds dramatically before dropping a catchphrase at the perfect moment. You mix pop culture, rhythm, and genuine excitement. You never do generic — every call is an event." },
   { id: "buffett",  label: "Jimmy Buffett",   active: true,  prompt: "You are Jimmy Buffett, laid-back island vibes, margarita in hand" },
   { id: "suntzu",   label: "Sun Tzu",         active: true,  prompt: "You are Sun Tzu, author of The Art of War, applying ancient military wisdom" },
   { id: "socrates", label: "Socrates",        active: true,  prompt: "You are Socrates, using the Socratic method and philosophical questioning" },
@@ -806,6 +806,7 @@ export default function App() {
   const [zingerScreen, setZingerScreen] = useState(false);
   const [newStyleLabel, setNewStyleLabel] = useState("");
   const [newStylePrompt, setNewStylePrompt] = useState("");
+  const [generatingPrompt, setGeneratingPrompt] = useState(false);
   const [activePlayer, setActivePlayer] = useState(getSavedActivePlayer);
 
   useEffect(() => { loadData().then(setData); }, []);
@@ -1007,16 +1008,38 @@ export default function App() {
           </Card>
         ))}
         <div style={{ marginTop:20, fontSize:11, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginBottom:8 }}>Add Custom Style</div>
-        <input value={newStyleLabel} onChange={e => setNewStyleLabel(e.target.value)} placeholder="Style name (e.g. Yogi Berra)"
-          style={{ width:"100%", background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, color:T.text, padding:"10px 12px", fontFamily:mono, fontSize:13, outline:"none", boxSizing:"border-box", marginBottom:8 }} />
-        <textarea value={newStylePrompt} onChange={e => setNewStylePrompt(e.target.value)} placeholder="Style prompt (e.g. You are Yogi Berra, famous for paradoxical wisdom and malapropisms)"
-          style={{ width:"100%", background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, color:T.text, padding:"10px 12px", fontFamily:mono, fontSize:13, outline:"none", boxSizing:"border-box", resize:"vertical", minHeight:80, marginBottom:8 }} />
-        <Btn T={T} disabled={!newStyleLabel.trim() || !newStylePrompt.trim()} onClick={() => {
-          const newStyle = { id: "custom_" + Date.now(), label: newStyleLabel.trim(), prompt: newStylePrompt.trim(), active: true };
-          const updated = [...zingerStyles, newStyle];
-          setZingerStyles(updated); saveZingerStyles(updated);
-          setNewStyleLabel(""); setNewStylePrompt("");
-        }} style={{ width:"100%" }}>Add Style</Btn>
+        <div style={{ display:"flex", gap:6, marginBottom:8 }}>
+          <input value={newStyleLabel} onChange={e => setNewStyleLabel(e.target.value)} placeholder="Persona name (e.g. Bill Murray)"
+            style={{ flex:1, background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, color:T.text, padding:"10px 12px", fontFamily:mono, fontSize:13, outline:"none", boxSizing:"border-box" }} />
+          <button disabled={!newStyleLabel.trim() || generatingPrompt} onClick={async () => {
+            setGeneratingPrompt(true);
+            try {
+              const res = await fetch("/api/recap", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ prompt: `Write a rich persona prompt for "${newStyleLabel.trim()}" to be used as a zinger writer for a friend group's daily sports word puzzle competition. The prompt should include specific catchphrases, mannerisms, stylistic quirks, and references that make this persona instantly recognizable. It should instruct Claude to write in character. Keep it under 120 words, written as a direct instruction starting with "You are..."` }),
+              });
+              if (res.ok) {
+                const d = await res.json();
+                if (d.text) setNewStylePrompt(d.text.trim());
+              }
+            } catch(e) { /* silently fail */ }
+            setGeneratingPrompt(false);
+          }} style={{ background:T.accent, border:"none", borderRadius:8, color:"#111", fontFamily:mono, fontWeight:700, fontSize:12, padding:"0 14px", cursor:(!newStyleLabel.trim() || generatingPrompt) ? "not-allowed" : "pointer", opacity:(!newStyleLabel.trim() || generatingPrompt) ? 0.45 : 1, whiteSpace:"nowrap" }}>
+            {generatingPrompt ? "✍️…" : "✨ Generate"}
+          </button>
+        </div>
+        <textarea value={newStylePrompt} onChange={e => setNewStylePrompt(e.target.value)} placeholder="Prompt will auto-generate, or type your own…"
+          style={{ width:"100%", background:T.surface, border:`1px solid ${newStylePrompt ? T.accent : T.border}`, borderRadius:8, color:T.text, padding:"10px 12px", fontFamily:mono, fontSize:12, outline:"none", boxSizing:"border-box", resize:"vertical", minHeight:100, marginBottom:8, transition:"border-color 0.2s" }} />
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+          <Btn T={T} variant="ghost" disabled={!newStylePrompt.trim()} onClick={() => setNewStylePrompt("")} style={{ fontSize:12 }}>Clear Prompt</Btn>
+          <Btn T={T} disabled={!newStyleLabel.trim() || !newStylePrompt.trim()} onClick={() => {
+            const newStyle = { id: "custom_" + Date.now(), label: newStyleLabel.trim(), prompt: newStylePrompt.trim(), active: true };
+            const updated = [...zingerStyles, newStyle];
+            setZingerStyles(updated); saveZingerStyles(updated);
+            setNewStyleLabel(""); setNewStylePrompt("");
+          }}>Add Style</Btn>
+        </div>
       </div>
     </Screen>
   );
