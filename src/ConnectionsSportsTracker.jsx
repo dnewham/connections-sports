@@ -632,7 +632,7 @@ function pickRandomZingerStyle(styles) {
 }
 
 // ── Weekly Recap Generator ────────────────────────────────────────────────
-async function generateRecap(games, players, weekStr) {
+async function generateRecap(games, players, weekStr, recapPersona) {
   // Collect all games from the target week
   const weekGames = games.filter(g => g.date && getISOWeek(g.date) === weekStr);
   if (weekGames.length === 0) return null;
@@ -705,7 +705,10 @@ async function generateRecap(games, players, weekStr) {
     }
   }
 
-  const prompt = `You are the announcer for a competitive friend group's weekly Connections: Sports Edition puzzle recap. The group plays NYT Connections Sports Edition daily and tracks their scores with custom rules.
+  const personaIntro = recapPersona
+    ? recapPersona.prompt + ` You are writing a weekly recap for a competitive friend group's Connections: Sports Edition puzzle competition. Stay fully in character throughout. Include all factual detail but deliver it in your persona's voice.`
+    : `You are the announcer for a competitive friend group's weekly Connections: Sports Edition puzzle recap. The group plays NYT Connections Sports Edition daily and tracks their scores with custom rules.`;
+  const prompt = `${personaIntro}
 
 SCORING RULES (for context):
 - Base score = time to complete the puzzle
@@ -730,7 +733,7 @@ ${standings.join("\n")}
 STREAK NOTES:
 ${streakContext.length > 0 ? streakContext.join("\n") : "No notable streak changes this week"}
 
-Write a weekly recap in the style of a mix between ESPN SportsCenter, competitive trash talk, and friendly banter. It should:
+${recapPersona ? `Write a weekly recap entirely in the persona voice described above — do not break character. It should:` : `Write a weekly recap in the style of a mix between ESPN SportsCenter, competitive trash talk, and friendly banter. It should:`}
 - Open with a punchy headline for the week — the headline must include the week date range in parentheses immediately after the week number, e.g. "WEEK 12 RECAP (Mar 16 - Mar 22, 2026): YOUR PUNCHY TITLE HERE"
 - Recap each day's action with color commentary, calling out impressive times, brutal DNFs, close finishes, and any notable adjustments
 - Crown the weekly winner with appropriate fanfare
@@ -796,7 +799,9 @@ export default function App() {
   const [catLoading, setCatLoading]   = useState(false);
   const [catError, setCatError]       = useState("");
   const [recapLoading, setRecapLoading] = useState(false);
-  const [recapWeek, setRecapWeek]     = useState(null);  // which week the recap is for
+  const [recapWeek, setRecapWeek]     = useState(null);
+  const [recapStyle, setRecapStyle]   = useState(null);
+  const [showRecapStylePicker, setShowRecapStylePicker] = useState(false);
   const [copiedRecap, setCopiedRecap] = useState(false);
   const [sharing, setSharing]         = useState(false);
   const [showStylePicker, setShowStylePicker] = useState(false);
@@ -1496,26 +1501,43 @@ export default function App() {
           if (!hasLastWeekData) return null;
           return (
             <div style={{ marginBottom:14 }}>
-              <Btn T={T} variant="ghost" onClick={async () => {
-                if (recapLoading) return;
-                setRecapWeek(lastWeek);
-                setRecapLoading(true);
-                setRecap(null);
-                try {
-                  const text = await generateRecap(data.games, data.players, lastWeek);
-                  setRecap(text);
-                } catch(e) {
-                  setRecap("⚠ Could not generate recap: " + (e.message || "unknown error"));
-                } finally {
-                  setRecapLoading(false);
-                }
-              }} style={{ width:"100%", padding:12, boxSizing:"border-box" }}>
-                {recapLoading ? "✍️ Generating recap…" : recap && recapWeek === lastWeek ? "🔄 Regenerate Recap" : "📰 Last Week's Recap"}
-              </Btn>
+              <div style={{ display:"flex", gap:6 }}>
+                <Btn T={T} variant="ghost" onClick={async () => {
+                  if (recapLoading) return;
+                  setRecapWeek(lastWeek);
+                  setRecapLoading(true);
+                  setRecap(null);
+                  setShowRecapStylePicker(false);
+                  try {
+                    const text = await generateRecap(data.games, data.players, lastWeek, recapStyle);
+                    setRecap(text);
+                  } catch(e) {
+                    setRecap("⚠ Could not generate recap: " + (e.message || "unknown error"));
+                  } finally {
+                    setRecapLoading(false);
+                  }
+                }} style={{ flex:1, padding:12, boxSizing:"border-box" }}>
+                  {recapLoading ? "✍️ Generating…" : recap && recapWeek === lastWeek ? "🔄 Regenerate" : "📰 Last Week's Recap"}
+                </Btn>
+                {canEditZingerStyles(activePlayer) && (
+                  <button onClick={() => setShowRecapStylePicker(p => !p)} style={{ background:showRecapStylePicker ? `${T.accent}33` : T.surface, border:`1px solid ${showRecapStylePicker ? T.accent : T.border}`, borderRadius:9, padding:"0 12px", cursor:"pointer", fontSize:16, color:T.muted }}>🎭</button>
+                )}
+              </div>
+              {canEditZingerStyles(activePlayer) && showRecapStylePicker && (
+                <Card T={T} style={{ marginTop:8, marginBottom:4 }}>
+                  <div style={{ fontSize:11, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase", marginBottom:8 }}>Recap Persona</div>
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                    <button onClick={() => { setRecapStyle(null); setShowRecapStylePicker(false); }} style={{ fontSize:11, fontFamily:mono, fontWeight:700, padding:"4px 10px", borderRadius:6, border:`1px solid ${recapStyle===null ? T.accent : T.border}`, background:recapStyle===null ? `${T.accent}22` : T.surface, color:recapStyle===null ? T.accent : T.muted, cursor:"pointer" }}>🎙 Default</button>
+                    {zingerStyles.filter(s => s.active).map(s => (
+                      <button key={s.id} onClick={() => { setRecapStyle(s); setShowRecapStylePicker(false); }} style={{ fontSize:11, fontFamily:mono, fontWeight:700, padding:"4px 10px", borderRadius:6, border:`1px solid ${recapStyle?.id===s.id ? T.accent : T.border}`, background:recapStyle?.id===s.id ? `${T.accent}22` : T.surface, color:recapStyle?.id===s.id ? T.accent : T.muted, cursor:"pointer" }}>{s.label}</button>
+                    ))}
+                  </div>
+                </Card>
+              )}
               {recap && recapWeek === lastWeek && (
                 <Card T={T} style={{ marginTop:10 }}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-                    <div style={{ fontSize:11, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase" }}>Week of {recapWeek}</div>
+                    <div style={{ fontSize:11, color:T.muted, letterSpacing:"0.07em", textTransform:"uppercase" }}>{recapStyle ? `${recapStyle.label.toUpperCase()} — ` : ""}Week of {recapWeek}</div>
                     <button onClick={() => {
                       navigator.clipboard.writeText(recap).then(() => {
                         setCopiedRecap(true); setTimeout(() => setCopiedRecap(false), 2500);
