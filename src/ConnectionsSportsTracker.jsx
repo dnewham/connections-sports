@@ -1351,9 +1351,9 @@ export default function App() {
                   {game.difficulty&&<span style={{ textTransform:"capitalize" }}>{game.difficulty}</span>}
                   {activePlayer === "dster" && (
                     <button onClick={() => {
-                      // Use stored puzzle number, or infer from date, or leave blank for manual entry
-                      const pNum = game.puzzleNum || String(getTodaysPuzzleNum(data.games, game.date) || "");
-                      setCatPuzzleNum(pNum);
+                      // Only use this specific game's own puzzle number — never infer
+                      // from date, as that can cross-match a different game on the same date.
+                      setCatPuzzleNum(game.puzzleNum ? String(game.puzzleNum) : "");
                       setCatImage(null); setCatError(""); setCatScreen(true);
                     }}
                       style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:5, color:game.categories ? "#6DBF6D" : T.muted, fontSize:10, cursor:"pointer", fontFamily:mono, padding:"2px 7px" }}>
