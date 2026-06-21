@@ -41,7 +41,7 @@ function saveThemeLocally(name, themeId) {
 function parseShareText(text) {
   const errors = [];
   const timeMatch = text.match(/(?:Time:\s*|in\s+)(\d{1,2}):(\d{2})/i);
-  const puzzleMatch = text.match(/puzzle\s*#?(\d+)/i);
+  const puzzleMatch = text.match(/(?:puzzle\s*#?|sports edition\s*#)(\d+)/i);
   const puzzleNum = puzzleMatch ? puzzleMatch[1] : null;
   const diffMatch = text.match(/ranked\s+([a-z\s]+?)(?:\.|Average|\n|$)/i);
   const difficulty = diffMatch ? diffMatch[1].trim() : null;
