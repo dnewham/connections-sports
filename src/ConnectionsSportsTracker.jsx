@@ -567,15 +567,26 @@ ${entries.map((e, i) => {
 
 // ── Category Extractor ────────────────────────────────────────────────────
 async function extractCategoriesFromImage(base64Image, imageType) {
-  const response = await fetch("/api/recap", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      extractCategories: true,
-      imageData: base64Image,
-      imageType: imageType || "image/png",
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+  let response;
+  try {
+    response = await fetch("/api/recap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        extractCategories: true,
+        imageData: base64Image,
+        imageType: imageType || "image/png",
+      }),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    if (e.name === "AbortError") throw new Error("Request timed out after 30s — try again");
+    throw e;
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     throw new Error(err.error || `API error ${response.status}`);
