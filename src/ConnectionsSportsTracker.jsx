@@ -1108,8 +1108,26 @@ export default function App() {
             if (gameIdx >= 0) {
               fresh.games[gameIdx] = { ...fresh.games[gameIdx], categories: cats };
             } else {
+              // Try to derive the correct date for this puzzle number by extrapolating
+              // from existing games, rather than defaulting to today (which pollutes
+              // "today" views and weekly groupings for past puzzles).
+              const pNum = parseInt(catPuzzleNum.trim());
+              const anchors = fresh.games
+                .filter(g => g.date && g.puzzleNum)
+                .map(g => ({ date: g.date, puzzleNum: parseInt(g.puzzleNum) }));
+              let derivedDate = todayStr();
+              if (anchors.length > 0 && !isNaN(pNum)) {
+                // Use the closest anchor by puzzle number difference
+                const closest = anchors.reduce((best, a) =>
+                  Math.abs(a.puzzleNum - pNum) < Math.abs(best.puzzleNum - pNum) ? a : best
+                );
+                const diff = pNum - closest.puzzleNum;
+                const d = new Date(closest.date + "T12:00:00");
+                d.setDate(d.getDate() + diff);
+                derivedDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+              }
               // Create a stub game entry just to store the categories
-              fresh.games.push({ id: puzzleId, puzzleNum: catPuzzleNum.trim(), date: todayStr(), categories: cats, players: [] });
+              fresh.games.push({ id: puzzleId, puzzleNum: catPuzzleNum.trim(), date: derivedDate, categories: cats, players: [] });
             }
             await saveData(fresh);
             setData(fresh);
