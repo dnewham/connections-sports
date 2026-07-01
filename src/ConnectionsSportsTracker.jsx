@@ -933,6 +933,13 @@ export default function App() {
 
   const names = playerNames(data.players);
 
+  const deleteGame = async (gameId) => {
+    if (!window.confirm('Delete this game record? This cannot be undone.')) return;
+    const fresh = await loadData();
+    const updated = { ...fresh, games: fresh.games.filter(g => g.id !== gameId) };
+    await persist(updated);
+  };
+
   // ── WHO ARE YOU? ────────────────────────────────────────────────────────
   if (!activePlayer || !names.includes(activePlayer)) {
     const DT = THEMES[DEFAULT_THEME];
@@ -1349,6 +1356,12 @@ export default function App() {
                 <span>{game.puzzleNum?`Puzzle #${game.puzzleNum}${game.date ? " · " + game.date : ""}`:game.date}</span>
                 <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                   {game.difficulty&&<span style={{ textTransform:"capitalize" }}>{game.difficulty}</span>}
+                  {activePlayer === "dster" && (
+                    <button onClick={() => deleteGame(game.id)}
+                      style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:5, color:"#e07070", fontSize:10, cursor:"pointer", fontFamily:mono, padding:"2px 7px" }}>
+                      🗑
+                    </button>
+                  )}
                   {activePlayer === "dster" && (
                     <button onClick={() => {
                       // Only use this specific game's own puzzle number — never infer
