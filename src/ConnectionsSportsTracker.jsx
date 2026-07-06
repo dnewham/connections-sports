@@ -1128,6 +1128,12 @@ export default function App() {
               if (gameIdx < 0 && !isNaN(pNum)) {
                 gameIdx = fresh.games.findIndex(g => g.puzzleNum && parseInt(g.puzzleNum) === pNum);
               }
+              if (gameIdx < 0 && !isNaN(pNum)) {
+                // Last resort: find a date-keyed game whose player entries reference this puzzle number
+                gameIdx = fresh.games.findIndex(g =>
+                  g.players && g.players.some(p => p.puzzleNum && parseInt(p.puzzleNum) === pNum)
+                );
+              }
               if (gameIdx >= 0) {
                 fresh.games[gameIdx] = { ...fresh.games[gameIdx], id: puzzleId, puzzleNum: catPuzzleNum.trim(), categories: cats };
               } else {
@@ -1187,6 +1193,12 @@ export default function App() {
                 let gameIdx = fresh.games.findIndex(g => g.id === puzzleId);
                 if (gameIdx < 0 && !isNaN(pNum)) {
                   gameIdx = fresh.games.findIndex(g => g.puzzleNum && parseInt(g.puzzleNum) === pNum);
+                }
+                if (gameIdx < 0 && !isNaN(pNum)) {
+                  // Last resort: find a date-keyed game whose player entries reference this puzzle number
+                  gameIdx = fresh.games.findIndex(g =>
+                    g.players && g.players.some(p => p.puzzleNum && parseInt(p.puzzleNum) === pNum)
+                  );
                 }
                 if (gameIdx >= 0) {
                   fresh.games[gameIdx] = { ...fresh.games[gameIdx], id: puzzleId, puzzleNum: catPuzzleNum.trim(), categories: cats };
