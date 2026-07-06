@@ -1129,10 +1129,24 @@ export default function App() {
                 gameIdx = fresh.games.findIndex(g => g.puzzleNum && parseInt(g.puzzleNum) === pNum);
               }
               if (gameIdx < 0 && !isNaN(pNum)) {
-                // Last resort: find a date-keyed game whose player entries reference this puzzle number
+                // Fallback: find a date-keyed game whose player entries reference this puzzle number
                 gameIdx = fresh.games.findIndex(g =>
                   g.players && g.players.some(p => p.puzzleNum && parseInt(p.puzzleNum) === pNum)
                 );
+              }
+              if (gameIdx < 0 && !isNaN(pNum)) {
+                // Final fallback: extrapolate date from nearest known anchor and match by date
+                const anchors = fresh.games.filter(g => g.date && g.puzzleNum && parseInt(g.puzzleNum));
+                if (anchors.length > 0) {
+                  const closest = anchors.reduce((best, a) =>
+                    Math.abs(parseInt(a.puzzleNum) - pNum) < Math.abs(parseInt(best.puzzleNum) - pNum) ? a : best
+                  );
+                  const diff = pNum - parseInt(closest.puzzleNum);
+                  const d = new Date(closest.date + "T12:00:00");
+                  d.setDate(d.getDate() + diff);
+                  const targetDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+                  gameIdx = fresh.games.findIndex(g => g.date === targetDate && (!g.puzzleNum || g.puzzleNum === String(pNum)));
+                }
               }
               if (gameIdx >= 0) {
                 fresh.games[gameIdx] = { ...fresh.games[gameIdx], id: puzzleId, puzzleNum: catPuzzleNum.trim(), categories: cats };
@@ -1195,10 +1209,24 @@ export default function App() {
                   gameIdx = fresh.games.findIndex(g => g.puzzleNum && parseInt(g.puzzleNum) === pNum);
                 }
                 if (gameIdx < 0 && !isNaN(pNum)) {
-                  // Last resort: find a date-keyed game whose player entries reference this puzzle number
+                  // Fallback: find a date-keyed game whose player entries reference this puzzle number
                   gameIdx = fresh.games.findIndex(g =>
                     g.players && g.players.some(p => p.puzzleNum && parseInt(p.puzzleNum) === pNum)
                   );
+                }
+                if (gameIdx < 0 && !isNaN(pNum)) {
+                  // Final fallback: extrapolate date from nearest known anchor and match by date
+                  const anchors = fresh.games.filter(g => g.date && g.puzzleNum && parseInt(g.puzzleNum));
+                  if (anchors.length > 0) {
+                    const closest = anchors.reduce((best, a) =>
+                      Math.abs(parseInt(a.puzzleNum) - pNum) < Math.abs(parseInt(best.puzzleNum) - pNum) ? a : best
+                    );
+                    const diff = pNum - parseInt(closest.puzzleNum);
+                    const d = new Date(closest.date + "T12:00:00");
+                    d.setDate(d.getDate() + diff);
+                    const targetDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+                    gameIdx = fresh.games.findIndex(g => g.date === targetDate && (!g.puzzleNum || g.puzzleNum === String(pNum)));
+                  }
                 }
                 if (gameIdx >= 0) {
                   fresh.games[gameIdx] = { ...fresh.games[gameIdx], id: puzzleId, puzzleNum: catPuzzleNum.trim(), categories: cats };
@@ -1443,9 +1471,11 @@ export default function App() {
                   )}
                   {activePlayer === "dster" && (
                     <button onClick={() => {
-                      // Only use this specific game's own puzzle number — never infer
-                      // from date, as that can cross-match a different game on the same date.
-                      setCatPuzzleNum(game.puzzleNum ? String(game.puzzleNum) : "");
+                      // Use game's own puzzleNum, or fall back to puzzleNum from player entries
+                      const inferredNum = game.puzzleNum
+                        || (game.players && game.players.length > 0 && game.players[0].puzzleNum)
+                        || "";
+                      setCatPuzzleNum(inferredNum ? String(inferredNum) : "");
                       setCatImage(null); setCatError(""); setCatScreen(true);
                     }}
                       style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:5, color:game.categories ? "#6DBF6D" : T.muted, fontSize:10, cursor:"pointer", fontFamily:mono, padding:"2px 7px" }}>
