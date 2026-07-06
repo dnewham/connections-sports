@@ -1122,12 +1122,15 @@ export default function App() {
               const cats = await extractCategoriesFromImage(catImage.data, catImage.mime);
               if (!cats || !cats.yellow) { setCatError("Could not extract categories — try a clearer screenshot"); setCatLoading(false); return; }
               const fresh = await loadData();
+              const pNum = parseInt(catPuzzleNum.trim());
               const puzzleId = `puzzle-${catPuzzleNum.trim()}`;
-              const gameIdx = fresh.games.findIndex(g => g.id === puzzleId);
+              let gameIdx = fresh.games.findIndex(g => g.id === puzzleId);
+              if (gameIdx < 0 && !isNaN(pNum)) {
+                gameIdx = fresh.games.findIndex(g => g.puzzleNum && parseInt(g.puzzleNum) === pNum);
+              }
               if (gameIdx >= 0) {
-                fresh.games[gameIdx] = { ...fresh.games[gameIdx], categories: cats };
+                fresh.games[gameIdx] = { ...fresh.games[gameIdx], id: puzzleId, puzzleNum: catPuzzleNum.trim(), categories: cats };
               } else {
-                const pNum = parseInt(catPuzzleNum.trim());
                 const anchors = fresh.games.filter(g => g.date && g.puzzleNum).map(g => ({ date: g.date, puzzleNum: parseInt(g.puzzleNum) }));
                 let derivedDate = todayStr();
                 if (anchors.length > 0 && !isNaN(pNum)) {
@@ -1179,12 +1182,15 @@ export default function App() {
                   purple: manualCats.purple.trim(),
                 };
                 const fresh = await loadData();
+                const pNum = parseInt(catPuzzleNum.trim());
                 const puzzleId = `puzzle-${catPuzzleNum.trim()}`;
-                const gameIdx = fresh.games.findIndex(g => g.id === puzzleId);
+                let gameIdx = fresh.games.findIndex(g => g.id === puzzleId);
+                if (gameIdx < 0 && !isNaN(pNum)) {
+                  gameIdx = fresh.games.findIndex(g => g.puzzleNum && parseInt(g.puzzleNum) === pNum);
+                }
                 if (gameIdx >= 0) {
-                  fresh.games[gameIdx] = { ...fresh.games[gameIdx], categories: cats };
+                  fresh.games[gameIdx] = { ...fresh.games[gameIdx], id: puzzleId, puzzleNum: catPuzzleNum.trim(), categories: cats };
                 } else {
-                  const pNum = parseInt(catPuzzleNum.trim());
                   const anchors = fresh.games.filter(g => g.date && g.puzzleNum).map(g => ({ date: g.date, puzzleNum: parseInt(g.puzzleNum) }));
                   let derivedDate = todayStr();
                   if (anchors.length > 0 && !isNaN(pNum)) {
