@@ -809,6 +809,8 @@ export default function App() {
   const [catPuzzleNum, setCatPuzzleNum] = useState("");   // puzzle number for category entry
   const [catLoading, setCatLoading]   = useState(false);
   const [catError, setCatError]       = useState("");
+  const [catTab, setCatTab]           = useState("screenshot"); // "screenshot" | "manual"
+  const [manualCats, setManualCats]   = useState({ yellow: "", green: "", blue: "", purple: "" });
   const [recapLoading, setRecapLoading] = useState(false);
   const [recapWeek, setRecapWeek]     = useState(null);
   const [recapStyle, setRecapStyle]   = useState(null);
@@ -1071,81 +1073,140 @@ export default function App() {
 
   // ── CATEGORY UPLOAD ──────────────────────────────────────────────────────
   if (catScreen) return (
-    <Screen title="Add Puzzle Categories" onBack={() => { setCatScreen(false); setCatImage(null); setCatError(""); setCatPuzzleNum(""); }} T={T}>
+    <Screen title="Add Puzzle Categories" onBack={() => { setCatScreen(false); setCatImage(null); setCatError(""); setCatPuzzleNum(""); setCatTab("screenshot"); setManualCats({ yellow: "", green: "", blue: "", purple: "" }); }} T={T}>
       <div style={{ marginTop:20 }}>
         <div style={{ fontSize:12, color:T.muted, marginBottom:8 }}>Puzzle number to tag categories to:</div>
         <input value={catPuzzleNum} onChange={e => setCatPuzzleNum(e.target.value)} placeholder="e.g. 591"
           style={{ width:"100%", background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, color:T.text, padding:"10px 12px", fontFamily:mono, fontSize:14, outline:"none", boxSizing:"border-box", marginBottom:16 }} />
-        <div style={{ fontSize:12, color:T.muted, marginBottom:8 }}>Upload a screenshot of the puzzle categories:</div>
-        <label style={{ display:"block", background:T.surface, border:`2px dashed ${catImage ? T.accent : T.border}`, borderRadius:10, padding:24, textAlign:"center", cursor:"pointer" }}>
-          <input type="file" accept="image/*" style={{ display:"none" }} onChange={e => {
-            const file = e.target.files[0];
-            if (!file) return;
-            // Compress image before sending to avoid 413 errors
-            const img = new Image();
-            const objectUrl = URL.createObjectURL(file);
-            img.onload = () => {
-              URL.revokeObjectURL(objectUrl);
-              const canvas = document.createElement("canvas");
-              const MAX = 1200;
-              const scale = Math.min(1, MAX / Math.max(img.width, img.height));
-              canvas.width = Math.round(img.width * scale);
-              canvas.height = Math.round(img.height * scale);
-              canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-              const compressed = canvas.toDataURL("image/jpeg", 0.85);
-              const [header, data] = compressed.split(",");
-              setCatImage({ data, mime: "image/jpeg" });
-            };
-            img.src = objectUrl;
-          }} />
-          {catImage
-            ? <div style={{ color:T.accent, fontSize:13, fontWeight:700 }}>✓ Image selected ({catImage?.mime || ""}) — ready to extract</div>
-            : <div style={{ color:T.muted, fontSize:13 }}>📷 Tap to select screenshot</div>}
-        </label>
-        {catError && <div style={{ marginTop:10, fontSize:12, color:"#e07070" }}>⚠ {catError}</div>}
-        <Btn T={T} disabled={!catImage?.data || !catPuzzleNum.trim() || catLoading} onClick={async () => {
-          setCatLoading(true); setCatError("");
-          try {
-            const cats = await extractCategoriesFromImage(catImage.data, catImage.mime);
-            if (!cats || !cats.yellow) { setCatError("Could not extract categories — try a clearer screenshot"); setCatLoading(false); return; }
-            // Find the game in Firestore and update it
-            const fresh = await loadData();
-            const puzzleId = `puzzle-${catPuzzleNum.trim()}`;
-            const gameIdx = fresh.games.findIndex(g => g.id === puzzleId);
-            if (gameIdx >= 0) {
-              fresh.games[gameIdx] = { ...fresh.games[gameIdx], categories: cats };
-            } else {
-              // Try to derive the correct date for this puzzle number by extrapolating
-              // from existing games, rather than defaulting to today (which pollutes
-              // "today" views and weekly groupings for past puzzles).
-              const pNum = parseInt(catPuzzleNum.trim());
-              const anchors = fresh.games
-                .filter(g => g.date && g.puzzleNum)
-                .map(g => ({ date: g.date, puzzleNum: parseInt(g.puzzleNum) }));
-              let derivedDate = todayStr();
-              if (anchors.length > 0 && !isNaN(pNum)) {
-                // Use the closest anchor by puzzle number difference
-                const closest = anchors.reduce((best, a) =>
-                  Math.abs(a.puzzleNum - pNum) < Math.abs(best.puzzleNum - pNum) ? a : best
-                );
-                const diff = pNum - closest.puzzleNum;
-                const d = new Date(closest.date + "T12:00:00");
-                d.setDate(d.getDate() + diff);
-                derivedDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+        {/* Tab switcher */}
+        <div style={{ display:"flex", gap:4, background:T.surface, borderRadius:10, padding:4, marginBottom:16 }}>
+          {[["screenshot","📷 Screenshot"],["manual","✏️ Manual"]].map(([id,label]) => (
+            <button key={id} onClick={() => { setCatTab(id); setCatError(""); }} style={{
+              flex:1, padding:"8px 4px", border:"none", borderRadius:7, cursor:"pointer",
+              fontFamily:mono, fontSize:11, fontWeight:700, letterSpacing:"0.04em", textTransform:"uppercase",
+              background: catTab===id ? T.accent : "transparent",
+              color: catTab===id ? (T.bg==="#f5f5f5" ? "#fff" : "#111") : T.muted,
+            }}>{label}</button>
+          ))}
+        </div>
+
+        {catTab === "screenshot" && (<>
+          <label style={{ display:"block", background:T.surface, border:`2px dashed ${catImage ? T.accent : T.border}`, borderRadius:10, padding:24, textAlign:"center", cursor:"pointer" }}>
+            <input type="file" accept="image/*" style={{ display:"none" }} onChange={e => {
+              const file = e.target.files[0];
+              if (!file) return;
+              const img = new Image();
+              const objectUrl = URL.createObjectURL(file);
+              img.onload = () => {
+                URL.revokeObjectURL(objectUrl);
+                const canvas = document.createElement("canvas");
+                const MAX = 1200;
+                const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+                canvas.width = Math.round(img.width * scale);
+                canvas.height = Math.round(img.height * scale);
+                canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+                const compressed = canvas.toDataURL("image/jpeg", 0.85);
+                const [header, data] = compressed.split(",");
+                setCatImage({ data, mime: "image/jpeg" });
+              };
+              img.src = objectUrl;
+            }} />
+            {catImage
+              ? <div style={{ color:T.accent, fontSize:13, fontWeight:700 }}>✓ Image selected ({catImage?.mime || ""}) — ready to extract</div>
+              : <div style={{ color:T.muted, fontSize:13 }}>📷 Tap to select screenshot</div>}
+          </label>
+          {catError && <div style={{ marginTop:10, fontSize:12, color:"#e07070" }}>⚠ {catError}</div>}
+          <Btn T={T} disabled={!catImage?.data || !catPuzzleNum.trim() || catLoading} onClick={async () => {
+            setCatLoading(true); setCatError("");
+            try {
+              const cats = await extractCategoriesFromImage(catImage.data, catImage.mime);
+              if (!cats || !cats.yellow) { setCatError("Could not extract categories — try a clearer screenshot"); setCatLoading(false); return; }
+              const fresh = await loadData();
+              const puzzleId = `puzzle-${catPuzzleNum.trim()}`;
+              const gameIdx = fresh.games.findIndex(g => g.id === puzzleId);
+              if (gameIdx >= 0) {
+                fresh.games[gameIdx] = { ...fresh.games[gameIdx], categories: cats };
+              } else {
+                const pNum = parseInt(catPuzzleNum.trim());
+                const anchors = fresh.games.filter(g => g.date && g.puzzleNum).map(g => ({ date: g.date, puzzleNum: parseInt(g.puzzleNum) }));
+                let derivedDate = todayStr();
+                if (anchors.length > 0 && !isNaN(pNum)) {
+                  const closest = anchors.reduce((best, a) => Math.abs(a.puzzleNum - pNum) < Math.abs(best.puzzleNum - pNum) ? a : best);
+                  const diff = pNum - closest.puzzleNum;
+                  const d = new Date(closest.date + "T12:00:00");
+                  d.setDate(d.getDate() + diff);
+                  derivedDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+                }
+                fresh.games.push({ id: puzzleId, puzzleNum: catPuzzleNum.trim(), date: derivedDate, categories: cats, players: [] });
               }
-              // Create a stub game entry just to store the categories
-              fresh.games.push({ id: puzzleId, puzzleNum: catPuzzleNum.trim(), date: derivedDate, categories: cats, players: [] });
+              await saveData(fresh);
+              setData(fresh);
+              setCatScreen(false); setCatImage(null); setCatPuzzleNum("");
+            } catch(e) {
+              setCatError(e.message || "Unknown error");
             }
-            await saveData(fresh);
-            setData(fresh);
-            setCatScreen(false); setCatImage(null); setCatPuzzleNum("");
-          } catch(e) {
-            setCatError(e.message || "Unknown error");
-          }
-          setCatLoading(false);
-        }} style={{ width:"100%", marginTop:16 }}>
-          {catLoading ? "Extracting…" : "Extract & Save Categories"}
-        </Btn>
+            setCatLoading(false);
+          }} style={{ width:"100%", marginTop:16 }}>
+            {catLoading ? "Extracting…" : "Extract & Save Categories"}
+          </Btn>
+        </>)}
+
+        {catTab === "manual" && (<>
+          {["yellow","green","blue","purple"].map(color => (
+            <div key={color} style={{ marginBottom:12 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+                <span style={{ width:10, height:10, borderRadius:"50%", background:COLOR[color].bg, display:"inline-block", flexShrink:0 }} />
+                <span style={{ fontSize:12, color:T.muted, textTransform:"capitalize", fontWeight:700 }}>{color}</span>
+              </div>
+              <input
+                value={manualCats[color]}
+                onChange={e => setManualCats(m => ({ ...m, [color]: e.target.value }))}
+                placeholder={`e.g. ${color === "yellow" ? "TYPES OF OUTS IN BASEBALL" : color === "green" ? "NASCAR TRACKS" : color === "blue" ? "NEW YORK KNICKS" : "PREMIER LEAGUE VENUES"}`}
+                style={{ width:"100%", background:T.surface, border:`1px solid ${T.border}`, borderRadius:8, color:T.text, padding:"10px 12px", fontFamily:mono, fontSize:13, outline:"none", boxSizing:"border-box" }}
+              />
+            </div>
+          ))}
+          {catError && <div style={{ marginTop:4, fontSize:12, color:"#e07070" }}>⚠ {catError}</div>}
+          <Btn T={T}
+            disabled={!catPuzzleNum.trim() || !manualCats.yellow.trim() || !manualCats.green.trim() || !manualCats.blue.trim() || !manualCats.purple.trim() || catLoading}
+            onClick={async () => {
+              setCatLoading(true); setCatError("");
+              try {
+                const cats = {
+                  yellow: manualCats.yellow.trim(),
+                  green: manualCats.green.trim(),
+                  blue: manualCats.blue.trim(),
+                  purple: manualCats.purple.trim(),
+                };
+                const fresh = await loadData();
+                const puzzleId = `puzzle-${catPuzzleNum.trim()}`;
+                const gameIdx = fresh.games.findIndex(g => g.id === puzzleId);
+                if (gameIdx >= 0) {
+                  fresh.games[gameIdx] = { ...fresh.games[gameIdx], categories: cats };
+                } else {
+                  const pNum = parseInt(catPuzzleNum.trim());
+                  const anchors = fresh.games.filter(g => g.date && g.puzzleNum).map(g => ({ date: g.date, puzzleNum: parseInt(g.puzzleNum) }));
+                  let derivedDate = todayStr();
+                  if (anchors.length > 0 && !isNaN(pNum)) {
+                    const closest = anchors.reduce((best, a) => Math.abs(a.puzzleNum - pNum) < Math.abs(best.puzzleNum - pNum) ? a : best);
+                    const diff = pNum - closest.puzzleNum;
+                    const d = new Date(closest.date + "T12:00:00");
+                    d.setDate(d.getDate() + diff);
+                    derivedDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+                  }
+                  fresh.games.push({ id: puzzleId, puzzleNum: catPuzzleNum.trim(), date: derivedDate, categories: cats, players: [] });
+                }
+                await saveData(fresh);
+                setData(fresh);
+                setCatScreen(false); setCatPuzzleNum(""); setManualCats({ yellow: "", green: "", blue: "", purple: "" });
+              } catch(e) {
+                setCatError(e.message || "Unknown error");
+              }
+              setCatLoading(false);
+            }} style={{ width:"100%", marginTop:4 }}>
+            {catLoading ? "Saving…" : "Save Categories"}
+          </Btn>
+        </>)}
         <Btn T={T} variant="ghost" disabled={!catPuzzleNum.trim()} onClick={async () => {
           setCatLoading(true); setCatError("");
           try {
