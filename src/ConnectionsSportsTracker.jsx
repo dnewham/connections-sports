@@ -1135,6 +1135,17 @@ export default function App() {
                 );
               }
               if (gameIdx < 0 && !isNaN(pNum)) {
+                // Final fallback: parse puzzle number from rawInput text in player entries
+                const rawPuzzleRegex = /(?:puzzle\s*#?|sports edition\s*#|connections:\s*sports edition\s*#)(\d+)/i;
+                gameIdx = fresh.games.findIndex(g =>
+                  g.players && g.players.some(p => {
+                    if (!p.rawInput) return false;
+                    const m = p.rawInput.match(rawPuzzleRegex);
+                    return m && parseInt(m[1]) === pNum;
+                  })
+                );
+              }
+              if (gameIdx < 0 && !isNaN(pNum)) {
                 // Final fallback: extrapolate date from nearest known anchor and match by date
                 const anchors = fresh.games.filter(g => g.date && g.puzzleNum && parseInt(g.puzzleNum));
                 if (anchors.length > 0) {
@@ -1212,6 +1223,17 @@ export default function App() {
                   // Fallback: find a date-keyed game whose player entries reference this puzzle number
                   gameIdx = fresh.games.findIndex(g =>
                     g.players && g.players.some(p => p.puzzleNum && parseInt(p.puzzleNum) === pNum)
+                  );
+                }
+                if (gameIdx < 0 && !isNaN(pNum)) {
+                  // Final fallback: parse puzzle number from rawInput text in player entries
+                  const rawPuzzleRegex = /(?:puzzle\s*#?|sports edition\s*#|connections:\s*sports edition\s*#)(\d+)/i;
+                  gameIdx = fresh.games.findIndex(g =>
+                    g.players && g.players.some(p => {
+                      if (!p.rawInput) return false;
+                      const m = p.rawInput.match(rawPuzzleRegex);
+                      return m && parseInt(m[1]) === pNum;
+                    })
                   );
                 }
                 if (gameIdx < 0 && !isNaN(pNum)) {
@@ -1471,10 +1493,16 @@ export default function App() {
                   )}
                   {activePlayer === "dster" && (
                     <button onClick={() => {
-                      // Use game's own puzzleNum, or fall back to puzzleNum from player entries
+                      // Use game's own puzzleNum, or fall back to player entries, or parse rawInput
                       const inferredNum = game.puzzleNum
                         || (game.players && game.players.length > 0 && game.players[0].puzzleNum)
-                        || "";
+                        || (() => {
+                          // Last resort: parse puzzle number from rawInput text
+                          const raw = game.players && game.players.length > 0 && game.players[0].rawInput;
+                          if (!raw) return "";
+                          const m = raw.match(/(?:puzzle\s*#?|sports edition\s*#|connections:\s*sports edition\s*#)(\d+)/i);
+                          return m ? m[1] : "";
+                        })();
                       setCatPuzzleNum(inferredNum ? String(inferredNum) : "");
                       setCatImage(null); setCatError(""); setCatScreen(true);
                     }}
